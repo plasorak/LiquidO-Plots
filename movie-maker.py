@@ -19,15 +19,17 @@ import click
 # - Add truth information
 
 @click.command()
-@click.argument('input_file')
-@click.argument('output_file')
-def main(input_file, output_file):
-    hit_livetime = 2.
+@click.argument('input_data', type=click.Path(exists=True))
+@click.argument('output_movie', type=click.Path())
+def main(input_data, output_movie):
+
+    hit_lifetime = 2.
     seconds_per_ns = 0.5
     fps = 10
 
-    input_data = 'ev25_1cm_pitch_data.root'
-    output_movie = input_data.replace('.root', '.mp4')
+    if output_movie[-4:] != ".mp4":
+        raise RuntimeError('output file must be finishing with .mp4')
+
     hit_data  = uproot.open(input_data)['op_hits' ].arrays()
     geom_data = uproot.open(input_data)['geom'    ].arrays()
     mc_truth  = uproot.open(input_data)['mc_truth'].arrays()
@@ -52,14 +54,14 @@ def main(input_file, output_file):
 
 
     rprint(f'''
-    Min time: {min_time} ns
-    Max time: {max_time} ns
-    ''')
+Min time: {min_time} ns
+Max time: {max_time} ns
+''')
 
     rprint(f'''Number of hits:
-    - x: {hit_x.shape[0]} hits
-    - z: {hit_z.shape[0]} hits
-    ''')
+- x: {hit_x.shape[0]} hits
+- z: {hit_z.shape[0]} hits
+''')
 
     mask_x_1 = fiber_x<max_x
     mask_x_2 = fiber_x>min_x
@@ -77,10 +79,10 @@ def main(input_file, output_file):
     rprint(bins_z)
 
     rprint(f'''Size of the 3D histogram:
-    - x: {bins_x.shape[0]} bins {np.min(bins_x)} -> {np.max(bins_x)}
-    - z: {bins_z.shape[0]} bins {np.min(bins_z)} -> {np.max(bins_z)}
-    - total voxels: {bins_x.shape[0]*bins_z.shape[0]}
-    ''')
+- x: {bins_x.shape[0]} bins {np.min(bins_x)} -> {np.max(bins_x)}
+- z: {bins_z.shape[0]} bins {np.min(bins_z)} -> {np.max(bins_z)}
+- total voxels: {bins_x.shape[0]*bins_z.shape[0]}
+''')
     # mc_truth = ak.to_dataframe(mc_truth)
     # from icecream import ic
     # ic(type(mc_truth))
@@ -138,7 +140,7 @@ def main(input_file, output_file):
         if time_ns is None:
             mask = hit_t>0
         else:
-            mask1 = hit_t>time_ns-hit_livetime
+            mask1 = hit_t>time_ns-hit_lifetime
             mask2 = hit_t<time_ns
             mask = mask1 * mask2
 
