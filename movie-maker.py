@@ -12,11 +12,17 @@ import click
 
 
 # TODO: on the dunegpvm
-# - Fix fiber coordinates at the centre of the detector
-# - Fix hits' is_xz is_yz
+# - Fix fiber coordinates at the centre of the detector DONE
+# - Fix hits' is_xz is_yz  DONE
 # - Generate more events
 # TODO: here
 # - Add truth information
+
+def search_in_array(array, values, name=''):
+    rprint(f'Searching {values} in array {name}')
+    for i, f in enumerate(array):
+        if f in values:
+            rprint(i, f)
 
 @click.command()
 @click.argument('input_data', type=click.Path(exists=True))
@@ -25,10 +31,10 @@ def main(input_data, output_movie):
 
     hit_lifetime = 2.
     seconds_per_ns = 0.5
-    fps = 10
+    fps = 4
 
     if output_movie[-4:] != ".mp4":
-        raise RuntimeError('output file must be finishing with .mp4')
+        raise RuntimeError('Output file must be finishing with .mp4')
 
     hit_data  = uproot.open(input_data)['op_hits' ].arrays()
     geom_data = uproot.open(input_data)['geom'    ].arrays()
@@ -37,6 +43,13 @@ def main(input_data, output_movie):
     hit_x = ak.to_numpy(hit_data['h_pos_x'])
     hit_z = ak.to_numpy(hit_data['h_pos_z'])
     hit_t = ak.to_numpy(hit_data['h_time' ])
+    # hit_pandas = pd.DataFrame(
+    #     {
+    #         'x': hit_x,
+    #         'z': hit_z,
+    #         't': hit_t,
+    #     }
+    # )
 
     fiber_x = ak.to_numpy(geom_data['fiber_x_min'][geom_data['is_yz']]*1.)
     fiber_z = ak.to_numpy(geom_data['fiber_z_min'][geom_data['is_yz']]*1.)
@@ -51,7 +64,6 @@ def main(input_data, output_movie):
 
     min_z = np.min(hit_z)
     max_z = np.max(hit_z)
-
 
     rprint(f'''
 Min time: {min_time} ns
@@ -73,7 +85,6 @@ Max time: {max_time} ns
 
     bins_x = np.unique(np.sort(fiber_x[mask_x]))
     bins_z = np.unique(np.sort(fiber_z[mask_z]))
-
 
     rprint(bins_x)
     rprint(bins_z)
@@ -123,12 +134,7 @@ Max time: {max_time} ns
     #     labelledCheck.append(lbl)
     #     plotList.append(tempPlot)
 
-
-
-
     fig, ax = plt.subplots()
-
-
     def make_histogram(time_ns:float=None):
         # hit time:
         # | |  | |    |             |     | | ||
@@ -136,15 +142,29 @@ Max time: {max_time} ns
         #      time-livetime          time
         # mask:
         # o o  | |    |             |     o o oo
+        global hit_x, hit_z, hit_t
 
         if time_ns is None:
-            mask = hit_t>0
+            mask_future = hit_t>0
         else:
-            mask1 = hit_t>time_ns-hit_lifetime
-            mask2 = hit_t<time_ns
-            mask = mask1 * mask2
+            mask_past = hit_t>time_ns-hit_lifetime
+            rprint(f"{len(hit_x)} before discarding hits in the past")
+            # definitely discard the hits in the past to increase speed
+            # hit_x = hit_x[mask_past]
+            # hit_z = hit_z[mask_past]
+            # hit_t = hit_t[mask_past]
+            rprint(f"{len(hit_x)} after discarding hits in the past")
 
-        histogram, _ = np.histogramdd((hit_x[mask], hit_z[mask]), bins=(bins_x, bins_z), range=None, density=None, weights=None)
+            mask_future = hit_t<time_ns
+
+
+        histogram, _ = np.histogramdd(
+            (hit_x[mask_future], hit_z[mask_future]),
+            bins=(bins_x, bins_z),
+            range=None,
+            density=None,
+            weights=None
+        )
         return histogram
 
     h2 = make_histogram(None)
