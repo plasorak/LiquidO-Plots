@@ -9,19 +9,17 @@ import sys
 np.set_printoptions(threshold=sys.maxsize)
 from particle import Particle
 import click
+import pandas as pd
 
-
-# TODO: on the dunegpvm
-# - Fix fiber coordinates at the centre of the detector
-# - Fix hits' is_xz is_yz
-# - Generate more events
 # TODO: here
 # - Add truth information
 
 @click.command()
 @click.argument('input_data', type=click.Path(exists=True))
 @click.argument('output_movie', type=click.Path())
-def main(input_data, output_movie):
+@click.option('--only-image', is_flag=True, default=False)
+@click.option('--view', type=click.Choice(['xz', 'yz']), default='xz')
+def main(input_data, output_movie, only_image, view):
 
     hit_lifetime = 2.
     seconds_per_ns = 0.5
@@ -35,14 +33,40 @@ def main(input_data, output_movie):
     mc_truth  = uproot.open(input_data)['mc_truth'].arrays()
 
     hit_x = ak.to_numpy(hit_data['h_pos_x'])
+    hit_y = ak.to_numpy(hit_data['h_pos_y'])
     hit_z = ak.to_numpy(hit_data['h_pos_z'])
     hit_t = ak.to_numpy(hit_data['h_time' ])
 
-    fiber_x = ak.to_numpy(geom_data['fiber_x_min'][geom_data['is_yz']]*1.)
-    fiber_z = ak.to_numpy(geom_data['fiber_z_min'][geom_data['is_yz']]*1.)
+    particle_x = ak.to_numy(mc_truth['i_pos_x'])
+    particle_y = ak.to_numy(mc_truth['i_pos_y'])
+    particle_z = ak.to_numy(mc_truth['i_pos_z'])
+    particle_t = ak.to_numy(mc_truth['i_time' ])
 
-    max_time = np.max(hit_t)
-    min_time = np.min(hit_t)
+    particle_ids      = ak.to_numy(mc_truth['track_id'])
+    particle_pdgs     = ak.to_numy(mc_truth['i_particle'])
+    particle_energies = ak.to_numy(mc_truth['i_E'])
+
+    particle_df = pd.Dataframe(columns=['id', 'pdg', 'name', 'energy', 'livetime', 'primary'])
+
+    for ip, id in enumerate(particle_ids):
+        if id in particle_df.id:
+            pass
+        else:
+            particle_df.add(
+
+            )
+
+    view_str = f'is_{view}'
+    fiber_x = ak.to_numpy(geom_data['fiber_x_min'][geom_data[view_str]])
+    fiber_y = ak.to_numpy(geom_data['fiber_y_min'][geom_data[view_str]])
+    fiber_z = ak.to_numpy(geom_data['fiber_z_min'][geom_data[view_str]])
+
+    max_hit_time = np.max(hit_t)
+    min_hit_time = np.min(hit_t)
+    max_part_time = np.max(particle_t)
+    min_part_time = np.min(particle_t)
+
+    max_time = np.max([max_part_time, max_hit_time])
 
     times = np.arange(0, max_time+1, seconds_per_ns/fps)
 
@@ -52,14 +76,20 @@ def main(input_data, output_movie):
     min_z = np.min(hit_z)
     max_z = np.max(hit_z)
 
+    rprint(f'''Number of particles:
+particle_ids
+''')
 
     rprint(f'''
-Min time: {min_time} ns
-Max time: {max_time} ns
+Min hit time: {min_hit_time} ns
+Max hit time: {max_hit_time} ns
+Min particle time: {min_part_time} ns
+Max particle time: {max_part_time} ns
 ''')
 
     rprint(f'''Number of hits:
 - x: {hit_x.shape[0]} hits
+- y: {hit_x.shape[0]} hits
 - z: {hit_z.shape[0]} hits
 ''')
 
@@ -73,7 +103,6 @@ Max time: {max_time} ns
 
     bins_x = np.unique(np.sort(fiber_x[mask_x]))
     bins_z = np.unique(np.sort(fiber_z[mask_z]))
-
 
     rprint(bins_x)
     rprint(bins_z)
@@ -218,7 +247,10 @@ Max time: {max_time} ns
     im = plt.imshow(np.rot90(h2), norm=colors.LogNorm(), origin='lower', extent=None)
 
     plt.savefig(output_movie+'.png')
-    # exit()
+
+    if only_image:
+        exit(0)
+
     progress.start()
     ani = animation.FuncAnimation(
         fig,
