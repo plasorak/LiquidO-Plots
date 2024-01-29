@@ -147,7 +147,47 @@ Max time: {max_time} ns
         histogram, _ = np.histogramdd((hit_x[mask], hit_z[mask]), bins=(bins_x, bins_z), range=None, density=None, weights=None)
         return histogram
 
-    h2 = make_histogram(None)
+    def make_histogram(hit_x, hit_z, hit_t, time_ns:float=None, discard=False):
+        discard = False
+        # hit time:
+        # | |  | |    |             |     | | ||
+        #      |<---------------------|
+        #      time-livetime          time
+        # mask:
+        # o o  | |    |             |     o o oo
+        rprint(f'Time: {time_ns} ns')
+
+        if time_ns is None:
+            mask_future = hit_t>0
+
+        elif discard:
+            mask_past = hit_t>time_ns-hit_lifetime
+            rprint(f"{len(hit_x)} before discarding hits in the past")
+            # definitely discard the hits in the past to increase speed
+            hit_x = hit_x[mask_past]
+            hit_z = hit_z[mask_past]
+            hit_t = hit_t[mask_past]
+            rprint(f"{len(hit_x)} after discarding hits in the past")
+            mask_future = hit_t<time_ns
+        else:
+            mask_past = hit_t>time_ns-hit_lifetime
+            mask_future = hit_t<time_ns
+            mask_future = mask_future * mask_past
+
+
+
+        histogram, _ = np.histogramdd(
+            (hit_z[mask_future], hit_x[mask_future]),
+            bins=(bins_z, bins_x),
+            range=None,
+            density=None,
+            weights=None
+        )
+        rprint(histogram.shape)
+        return histogram
+
+
+    h2 = make_histogram(hit_x, hit_z, hit_t, None)
     max_hits = np.max(h2)
 
     timeText = ax.text(0.05, 0.05, str(0), ha="left", va="top", transform=ax.transAxes)
@@ -160,7 +200,7 @@ Max time: {max_time} ns
 
     def roll(time_ns:float):
         progress.update(task, completed=time_ns)
-        h = make_histogram(time_ns)
+        h = make_histogram(hit_x, hit_z, hit_t, time_ns, True)
         timeText.set_text("{:.2f} ns".format(time_ns))
 
         # for u in linesToUpdate[timeIndex]:
@@ -170,13 +210,15 @@ Max time: {max_time} ns
         im.set_data(h)
 
 
-    m = np.float64(0.)
-    for t in times:
-        m = np.max([np.max(make_histogram(t)), m])
+    # m = np.float64(0.)
+    # for t in times:
+    #     m = np.max([np.max(make_histogram(hit_x, hit_z, hit_t, time_ns, t)), m])
 
     # im = plt.imshow(h2, vmin=0.1, vmax=int(m), colors=colors.LogNorm())
-    im = plt.imshow(h2, extent=(min_x, max_x, min_z, max_z), norm=colors.LogNorm())
+    im = plt.imshow(np.rot90(h2), norm=colors.LogNorm(), origin='lower', extent=None)
 
+    plt.savefig(output_movie+'.png')
+    # exit()
     progress.start()
     ani = animation.FuncAnimation(
         fig,
