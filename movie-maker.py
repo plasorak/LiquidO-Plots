@@ -18,12 +18,14 @@ import pandas as pd
 @click.argument('input_data', type=click.Path(exists=True))
 @click.argument('output_movie', type=click.Path())
 @click.option('--only-image', is_flag=True, default=False)
-@click.option('--view', type=click.Choice(['xz', 'yz']), default='xz')
+@click.option('--view', type=click.Choice(['xz', 'yz']), default='yz')
 def main(input_data, output_movie, only_image, view):
 
-    hit_lifetime = 2.
-    seconds_per_ns = 0.5
-    fps = 10
+    hit_lifetime_ns_1 = 2.
+    hit_lifetime_ns_2 = 100.
+    cut_ns = 200
+    print_every_ns = 100.
+    fps = 10.
 
     if output_movie[-4:] != ".mp4":
         raise RuntimeError('output file must be finishing with .mp4')
@@ -32,29 +34,61 @@ def main(input_data, output_movie, only_image, view):
     geom_data = uproot.open(input_data)['geom'    ].arrays()
     mc_truth  = uproot.open(input_data)['mc_truth'].arrays()
 
-    hit_x = ak.to_numpy(hit_data['h_pos_x'])
-    hit_y = ak.to_numpy(hit_data['h_pos_y'])
-    hit_z = ak.to_numpy(hit_data['h_pos_z'])
-    hit_t = ak.to_numpy(hit_data['h_time' ])
+    hit_x     = ak.to_numpy(hit_data['h_pos_x' ])
+    hit_y     = ak.to_numpy(hit_data['h_pos_y' ])
+    hit_z     = ak.to_numpy(hit_data['h_pos_z' ])
+    hit_t     = ak.to_numpy(hit_data['h_time'  ])
+    hit_is_xy = ak.to_numpy(hit_data['h_is_xy' ])
+    hit_is_xz = ak.to_numpy(hit_data['h_is_xz' ])
+    hit_is_yz = ak.to_numpy(hit_data['h_is_yz' ])
 
-    particle_x = ak.to_numy(mc_truth['i_pos_x'])
-    particle_y = ak.to_numy(mc_truth['i_pos_y'])
-    particle_z = ak.to_numy(mc_truth['i_pos_z'])
-    particle_t = ak.to_numy(mc_truth['i_time' ])
+    rprint(f'nhits {len(hit_x)}')
 
-    particle_ids      = ak.to_numy(mc_truth['track_id'])
-    particle_pdgs     = ak.to_numy(mc_truth['i_particle'])
-    particle_energies = ak.to_numy(mc_truth['i_E'])
+    if view == 'xz':
+        hit_x = hit_x[hit_is_xz]
+        hit_y = hit_y[hit_is_xz]
+        hit_z = hit_z[hit_is_xz]
+        hit_t = hit_t[hit_is_xz]
+    elif view == 'yz':
+        hit_x = hit_x[hit_is_yz]
+        hit_y = hit_y[hit_is_yz]
+        hit_z = hit_z[hit_is_yz]
+        hit_t = hit_t[hit_is_yz]
 
-    particle_df = pd.Dataframe(columns=['id', 'pdg', 'name', 'energy', 'livetime', 'primary'])
+    rprint(f'nhits {len(hit_x)}')
 
-    for ip, id in enumerate(particle_ids):
-        if id in particle_df.id:
-            pass
-        else:
-            particle_df.add(
+    particle_x            = ak.to_numpy(mc_truth['i_pos_x'])
+    particle_y            = ak.to_numpy(mc_truth['i_pos_y'])
+    particle_z            = ak.to_numpy(mc_truth['i_pos_z'])
+    particle_t            = ak.to_numpy(mc_truth['i_time' ])
+    particle_ids          = ak.to_numpy(mc_truth['track_id'])
+    particle_pdgs         = ak.to_numpy(mc_truth['i_particle'])
+    particle_energies     = ak.to_numpy(mc_truth['i_E'])
+    particle_parents      = ak.to_numpy(mc_truth['parent_id'])
+    particle_interactions = ak.to_numpy(mc_truth['interaction_id'])
 
-            )
+    # Chuck all these neutrinos that escape the detector
+    neutrino_mask =  particle_pdgs !=  12
+    neutrino_mask *= particle_pdgs != -12
+    neutrino_mask *= particle_pdgs !=  14
+    neutrino_mask *= particle_pdgs != -14
+    neutrino_mask *= particle_pdgs !=  16
+    neutrino_mask *= particle_pdgs != -16
+    neutrino_mask *= particle_pdgs != 2112 # rm neutron too
+    #neutrino_mask *= particle_pdgs != 0 # rm weird crap
+
+    particle_x            = particle_x            [neutrino_mask]
+    particle_y            = particle_y            [neutrino_mask]
+    particle_z            = particle_z            [neutrino_mask]
+    particle_t            = particle_t            [neutrino_mask]
+    particle_ids          = particle_ids          [neutrino_mask]
+    particle_pdgs         = particle_pdgs         [neutrino_mask]
+    particle_energies     = particle_energies     [neutrino_mask]
+    particle_parents      = particle_parents      [neutrino_mask]
+    particle_interactions = particle_interactions [neutrino_mask]
+
+    from truth_dumper import dump_truth_info
+    dump_truth_info(input_data)
 
     view_str = f'is_{view}'
     fiber_x = ak.to_numpy(geom_data['fiber_x_min'][geom_data[view_str]])
@@ -68,30 +102,63 @@ def main(input_data, output_movie, only_image, view):
 
     max_time = np.max([max_part_time, max_hit_time])
 
-    times = np.arange(0, max_time+1, seconds_per_ns/fps)
+    times = np.arange(0, 200, 2)
+    times = np.append(times, np.arange(200, max_time+1, print_every_ns/fps)
+    rprint(times)
+    #    exit()
 
-    min_x = np.min(hit_x)
-    max_x = np.max(hit_x)
+    max_hit_x   = np.max(hit_x)
+    min_hit_x   = np.min(hit_x)
+    max_part_x  = np.max(particle_x)
+    min_part_x  = np.min(particle_x)
+    max_fiber_x = np.max(fiber_x)
+    min_fiber_x = np.min(fiber_x)
 
-    min_z = np.min(hit_z)
-    max_z = np.max(hit_z)
+    max_hit_y   = np.max(hit_y)
+    min_hit_y   = np.min(hit_y)
+    max_part_y  = np.max(particle_y)
+    min_part_y  = np.min(particle_y)
+    max_fiber_y = np.max(fiber_y)
+    min_fiber_y = np.min(fiber_y)
 
-    rprint(f'''Number of particles:
-particle_ids
-''')
+    max_hit_z   = np.max(hit_z)
+    min_hit_z   = np.min(hit_z)
+    max_part_z  = np.max(particle_z)
+    min_part_z  = np.min(particle_z)
+    max_fiber_z = np.max(fiber_z)
+    min_fiber_z = np.min(fiber_z)
 
-    rprint(f'''
-Min hit time: {min_hit_time} ns
-Max hit time: {max_hit_time} ns
-Min particle time: {min_part_time} ns
-Max particle time: {max_part_time} ns
-''')
+    td = Table('Type', 'Min', 'Max', title="Dimensions (ns and mm)")
+    td.add_row('hit time'     , f'{min_hit_time :0.2f}', f'{max_hit_time :0.2f}')
+    td.add_row('particle time', f'{min_part_time:0.2f}', f'{max_part_time:0.2f}')
+    td.add_row()
+    td.add_row('hit x'        , f'{min_hit_x    :0.2f}', f'{max_hit_x    :0.2f}')
+    td.add_row('particle x'   , f'{min_part_x   :0.2f}', f'{max_part_x   :0.2f}')
+    td.add_row('fiber x'      , f'{min_fiber_x  :0.2f}', f'{max_fiber_x  :0.2f}')
+    td.add_row()
+    td.add_row('hit y'        , f'{min_hit_y    :0.2f}', f'{max_hit_y    :0.2f}')
+    td.add_row('particle y'   , f'{min_part_y   :0.2f}', f'{max_part_y   :0.2f}')
+    td.add_row('fiber y'      , f'{min_fiber_y  :0.2f}', f'{max_fiber_y  :0.2f}')
+    td.add_row()
+    td.add_row('hit z'        , f'{min_hit_z    :0.2f}', f'{max_hit_z    :0.2f}')
+    td.add_row('particle z'   , f'{min_part_z   :0.2f}', f'{max_part_z   :0.2f}')
+    td.add_row('fiber z'      , f'{min_fiber_z  :0.2f}', f'{max_fiber_z  :0.2f}')
+
+    rprint(td)
 
     rprint(f'''Number of hits:
 - x: {hit_x.shape[0]} hits
 - y: {hit_x.shape[0]} hits
 - z: {hit_z.shape[0]} hits
 ''')
+
+    max_x = np.max([max_hit_x, max_part_x])
+    max_y = np.max([max_hit_y, max_part_y])
+    max_z = np.max([max_hit_z, max_part_z])
+
+    min_x = np.min([min_hit_x, min_part_x])
+    min_y = np.min([min_hit_y, min_part_y])
+    min_z = np.min([min_hit_z, min_part_z])
 
     mask_x_1 = fiber_x<max_x
     mask_x_2 = fiber_x>min_x
@@ -104,8 +171,8 @@ Max particle time: {max_part_time} ns
     bins_x = np.unique(np.sort(fiber_x[mask_x]))
     bins_z = np.unique(np.sort(fiber_z[mask_z]))
 
-    rprint(bins_x)
-    rprint(bins_z)
+    # rprint(bins_x)
+    # rprint(bins_z)
 
     rprint(f'''Size of the 3D histogram:
 - x: {bins_x.shape[0]} bins {np.min(bins_x)} -> {np.max(bins_x)}
@@ -169,7 +236,7 @@ Max particle time: {max_part_time} ns
         if time_ns is None:
             mask = hit_t>0
         else:
-            mask1 = hit_t>time_ns-hit_lifetime
+            mask1 = hit_t>time_ns-hit_lifetime_ns
             mask2 = hit_t<time_ns
             mask = mask1 * mask2
 
@@ -190,7 +257,7 @@ Max particle time: {max_part_time} ns
             mask_future = hit_t>0
 
         elif discard:
-            mask_past = hit_t>time_ns-hit_lifetime
+            mask_past = hit_t>time_ns-hit_lifetime_ns
             rprint(f"{len(hit_x)} before discarding hits in the past")
             # definitely discard the hits in the past to increase speed
             hit_x = hit_x[mask_past]
@@ -199,7 +266,7 @@ Max particle time: {max_part_time} ns
             rprint(f"{len(hit_x)} after discarding hits in the past")
             mask_future = hit_t<time_ns
         else:
-            mask_past = hit_t>time_ns-hit_lifetime
+            mask_past = hit_t>time_ns-hit_lifetime_ns
             mask_future = hit_t<time_ns
             mask_future = mask_future * mask_past
 
@@ -212,11 +279,11 @@ Max particle time: {max_part_time} ns
             density=None,
             weights=None
         )
-        rprint(histogram.shape)
         return histogram
 
 
     h2 = make_histogram(hit_x, hit_z, hit_t, None)
+    # rprint(h2)
     max_hits = np.max(h2)
 
     timeText = ax.text(0.05, 0.05, str(0), ha="left", va="top", transform=ax.transAxes)
@@ -244,8 +311,7 @@ Max particle time: {max_part_time} ns
     #     m = np.max([np.max(make_histogram(hit_x, hit_z, hit_t, time_ns, t)), m])
 
     # im = plt.imshow(h2, vmin=0.1, vmax=int(m), colors=colors.LogNorm())
-    im = plt.imshow(np.rot90(h2), norm=colors.LogNorm(), origin='lower', extent=None)
-
+    im = plt.imshow(h2, norm=colors.LogNorm(), origin='lower', extent=(min_z/10., max_z/10., min_x/10., max_x/10.))
     plt.savefig(output_movie+'.png')
 
     if only_image:
@@ -260,10 +326,10 @@ Max particle time: {max_part_time} ns
         blit=False
     )
 
-    plt.xlabel("x (mm)")
-    plt.ylabel("z (mm)")
-    plt.xlim([min_x, max_x])
-    plt.ylim([min_z, max_z])
+    plt.xlabel("z [cm]")
+    plt.ylabel("x [cm]")
+    # plt.xlim([min_x, max_x])
+    # plt.ylim([min_z, max_z])
     plt.colorbar()
     plt.tight_layout()
 
