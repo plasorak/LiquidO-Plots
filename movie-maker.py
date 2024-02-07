@@ -19,7 +19,8 @@ import pandas as pd
 @click.argument('output_movie', type=click.Path())
 @click.option('--only-image', is_flag=True, default=False)
 @click.option('--view', type=click.Choice(['xz', 'yz']), default='yz')
-def main(input_data, output_movie, only_image, view):
+@click.option('-e', '--energy-cut', type=float, default=0)
+def main(input_data, output_movie, only_image, view, energy_cut):
 
     hit_lifetime_ns_1 = 2.
     hit_lifetime_ns_2 = 100.
@@ -44,18 +45,30 @@ def main(input_data, output_movie, only_image, view):
 
     rprint(f'nhits {len(hit_x)}')
 
-    if view == 'xz':
+    if view == 'z':
         hit_x = hit_x[hit_is_xz]
         hit_y = hit_y[hit_is_xz]
         hit_z = hit_z[hit_is_xz]
         hit_t = hit_t[hit_is_xz]
-    elif view == 'yz':
+    elif view == 'xz':
         hit_x = hit_x[hit_is_yz]
         hit_y = hit_y[hit_is_yz]
         hit_z = hit_z[hit_is_yz]
         hit_t = hit_t[hit_is_yz]
 
     rprint(f'nhits {len(hit_x)}')
+
+    im = plt.hist2d(hit_z, hit_x, bins=[100,100])
+
+    plt.xlabel("z [cm]")
+    plt.ylabel("x [cm]")
+    # plt.xlim([min_x, max_x])
+    # plt.ylim([min_z, max_z])
+    plt.colorbar()
+    plt.tight_layout()
+
+    plt.savefig(output_movie+'.hits.png', dpi=800)
+    #exit()
 
     particle_x            = ak.to_numpy(mc_truth['i_pos_x'])
     particle_y            = ak.to_numpy(mc_truth['i_pos_y'])
@@ -68,14 +81,10 @@ def main(input_data, output_movie, only_image, view):
     particle_interactions = ak.to_numpy(mc_truth['interaction_id'])
 
     # Chuck all these neutrinos that escape the detector
-    neutrino_mask =  particle_pdgs !=  12
-    neutrino_mask *= particle_pdgs != -12
-    neutrino_mask *= particle_pdgs !=  14
-    neutrino_mask *= particle_pdgs != -14
-    neutrino_mask *= particle_pdgs !=  16
-    neutrino_mask *= particle_pdgs != -16
-    neutrino_mask *= particle_pdgs != 2112 # rm neutron too
-    #neutrino_mask *= particle_pdgs != 0 # rm weird crap
+    neutrino_pdgs = [12,-12,14,-14,16,-16]
+    neutrino_mask = particle_pdgs != 0
+    for neutrino_pdg in neutrino_pdgs:
+        neutrino_mask *= particle_pdgs != neutrino_pdg
 
     particle_x            = particle_x            [neutrino_mask]
     particle_y            = particle_y            [neutrino_mask]
@@ -88,7 +97,31 @@ def main(input_data, output_movie, only_image, view):
     particle_interactions = particle_interactions [neutrino_mask]
 
     from truth_dumper import dump_truth_info
-    dump_truth_info(input_data)
+    particle_df = dump_truth_info(input_data, energy_cut, ignore_pdgs = neutrino_pdgs)
+
+    def fill_trajectory(df, id):
+        row_id = 0
+        for i in range(len(particle_x)):
+            if particle_ids[i] == id:
+                df.loc[row_id] = [
+                    particle_x[i]/10,
+                    particle_y[i]/10,
+                    particle_z[i]/10,
+                    particle_t[i],
+                ]
+                row_id += 1
+        # df = df.sort_values('t')
+        df = df.reset_index()
+        return df
+
+    trajectories = {}
+    for _, row in particle_df.iterrows():
+        if row['energy'] < energy_cut:
+            continue
+        df = pd.DataFrame(columns=['x', 'y', 'z', 't'])
+        trajectories[row['id']] = fill_trajectory(df, row['id'])
+        rprint(trajectories[row['id']])
+    rprint(trajectories.keys())
 
     view_str = f'is_{view}'
     fiber_x = ak.to_numpy(geom_data['fiber_x_min'][geom_data[view_str]])
@@ -102,10 +135,8 @@ def main(input_data, output_movie, only_image, view):
 
     max_time = np.max([max_part_time, max_hit_time])
 
-    times = np.arange(0, 200, 2)
-    times = np.append(times, np.arange(200, max_time+1, print_every_ns/fps)
-    rprint(times)
-    #    exit()
+    times = np.arange(0, cut_ns, 2)
+    times = np.append(times, np.arange(cut_ns, max_time+1, print_every_ns/fps))
 
     max_hit_x   = np.max(hit_x)
     min_hit_x   = np.min(hit_x)
@@ -127,6 +158,8 @@ def main(input_data, output_movie, only_image, view):
     min_part_z  = np.min(particle_z)
     max_fiber_z = np.max(fiber_z)
     min_fiber_z = np.min(fiber_z)
+
+    from rich.table import Table
 
     td = Table('Type', 'Min', 'Max', title="Dimensions (ns and mm)")
     td.add_row('hit time'     , f'{min_hit_time :0.2f}', f'{max_hit_time :0.2f}')
@@ -152,13 +185,23 @@ def main(input_data, output_movie, only_image, view):
 - z: {hit_z.shape[0]} hits
 ''')
 
-    max_x = np.max([max_hit_x, max_part_x])
-    max_y = np.max([max_hit_y, max_part_y])
-    max_z = np.max([max_hit_z, max_part_z])
+    def add_padding(number, side):
+        if not side in ['left', 'right']:
+            raise RuntimeError(f'"side" should be "left" or "right". You provided "{side}"')
+        if   number>0 and side=="right": number = number * 1.
+        elif number<0 and side=="right": number = number * 1.
+        elif number>0 and side=="left" : number = number * 1.
+        elif number<0 and side=='left' : number = number * 1.
+        return number
 
-    min_x = np.min([min_hit_x, min_part_x])
-    min_y = np.min([min_hit_y, min_part_y])
-    min_z = np.min([min_hit_z, min_part_z])
+    max_x = add_padding(np.max([max_hit_x, max_part_x]), "right")
+    max_y = add_padding(np.max([max_hit_y, max_part_y]), "right")
+    max_z = add_padding(np.max([max_hit_z, max_part_z]), "right")
+
+
+    min_x = add_padding(np.min([min_hit_x, min_part_x]), "left")
+    min_y = add_padding(np.min([min_hit_y, min_part_y]), "left")
+    min_z = add_padding(np.min([min_hit_z, min_part_z]), "left")
 
     mask_x_1 = fiber_x<max_x
     mask_x_2 = fiber_x>min_x
@@ -171,77 +214,14 @@ def main(input_data, output_movie, only_image, view):
     bins_x = np.unique(np.sort(fiber_x[mask_x]))
     bins_z = np.unique(np.sort(fiber_z[mask_z]))
 
-    # rprint(bins_x)
-    # rprint(bins_z)
-
     rprint(f'''Size of the 3D histogram:
 - x: {bins_x.shape[0]} bins {np.min(bins_x)} -> {np.max(bins_x)}
 - z: {bins_z.shape[0]} bins {np.min(bins_z)} -> {np.max(bins_z)}
 - total voxels: {bins_x.shape[0]*bins_z.shape[0]}
 ''')
-    # mc_truth = ak.to_dataframe(mc_truth)
-    # from icecream import ic
-    # ic(type(mc_truth))
-    # track_ids = mc_truth['track_id'].unique()
-    # all_particle_data_time_ordered = []
-
-    # for i, tid in enumerate(track_ids):
-    #     particle_data_time_ordered = mc_truth[mc_truth['track_id'] == tid]
-    #     particle_data_time_ordered = particle_data_time_ordered.sort_values(by=['i_time'])
-    #     first_step = particle_data_time_ordered.loc[0,:]
-    #     rprint(f"Considering particle #{i} of {len(track_ids)}: {Particle.from_pdgid(first_step.i_particle).name}, of energy: {first_step.i_E} GeV")
-    #     all_particle_data_time_ordered.append(particle_data_time_ordered)
-
-    #     trackUpdate = np.searchsorted(times, track['i_time'], side="right")
-    #     updateIndices = np.zeros_like(times)
-    #     updateIndices[np.array(list(set(trackUpdate))) - 1] = 1
-    #     updateLineInfo.append(updateIndices)
-    # exit()
-    # updateLineInfo = np.array(updateLineInfo)
-    # updateLineInfo = updateLineInfo.T
-    # linesToUpdate = [np.where(updateLineInfo[timeIndex])[0] for timeIndex in range(0, len(times) - 1)]
-
-    # plotList = []
-    # labelledCheck = []
-
-    # for l in range(0, len(trackList)):
-    #     lbl = trackList[l]['i_particle'].to_list()[0]
-    #     displayLbl = latexDict[trackList[l]['i_particle'].to_list()[0]]
-    #     trackList[l]['i_particle'].replace(pdgToNameDict, inplace=True)
-    #     col = colorDict[lbl]
-    #     lw = 1.5
-    #     if lbl == 22:
-    #         lw = 0.5
-    #     if lbl not in labelledCheck:
-    #         tempPlot, = plt.plot([], [], label=displayLbl, color=col, lw=lw)
-    #     else:
-    #         tempPlot, = plt.plot([], [], color=col, lw=lw)
-    #     labelledCheck.append(lbl)
-    #     plotList.append(tempPlot)
-
-
-
 
     fig, ax = plt.subplots()
 
-
-    def make_histogram(time_ns:float=None):
-        # hit time:
-        # | |  | |    |             |     | | ||
-        #      |<---------------------|
-        #      time-livetime          time
-        # mask:
-        # o o  | |    |             |     o o oo
-
-        if time_ns is None:
-            mask = hit_t>0
-        else:
-            mask1 = hit_t>time_ns-hit_lifetime_ns
-            mask2 = hit_t<time_ns
-            mask = mask1 * mask2
-
-        histogram, _ = np.histogramdd((hit_x[mask], hit_z[mask]), bins=(bins_x, bins_z), range=None, density=None, weights=None)
-        return histogram
 
     def make_histogram(hit_x, hit_z, hit_t, time_ns:float=None, discard=False):
         discard = False
@@ -257,6 +237,11 @@ def main(input_data, output_movie, only_image, view):
             mask_future = hit_t>0
 
         elif discard:
+            if time_ns<cut_ns:
+                hit_lifetime_ns = hit_lifetime_ns_1
+            else:
+                hit_lifetime_ns = hit_lifetime_ns_2
+
             mask_past = hit_t>time_ns-hit_lifetime_ns
             rprint(f"{len(hit_x)} before discarding hits in the past")
             # definitely discard the hits in the past to increase speed
@@ -266,6 +251,10 @@ def main(input_data, output_movie, only_image, view):
             rprint(f"{len(hit_x)} after discarding hits in the past")
             mask_future = hit_t<time_ns
         else:
+            if time_ns<cut_ns:
+                hit_lifetime_ns = hit_lifetime_ns_1
+            else:
+                hit_lifetime_ns = hit_lifetime_ns_2
             mask_past = hit_t>time_ns-hit_lifetime_ns
             mask_future = hit_t<time_ns
             mask_future = mask_future * mask_past
@@ -279,14 +268,18 @@ def main(input_data, output_movie, only_image, view):
             density=None,
             weights=None
         )
-        return histogram
+        return histogram.T
 
+    def make_lines(time_ns:float=None):
+
+        pass
 
     h2 = make_histogram(hit_x, hit_z, hit_t, None)
-    # rprint(h2)
     max_hits = np.max(h2)
 
-    timeText = ax.text(0.05, 0.05, str(0), ha="left", va="top", transform=ax.transAxes)
+
+
+    timeText = ax.text(0.05, 0.05, '', ha="left", va="top", transform=ax.transAxes)
 
     frame_number = 0
 
@@ -305,14 +298,28 @@ def main(input_data, output_movie, only_image, view):
 
         im.set_data(h)
 
-
-    # m = np.float64(0.)
-    # for t in times:
-    #     m = np.max([np.max(make_histogram(hit_x, hit_z, hit_t, time_ns, t)), m])
-
-    # im = plt.imshow(h2, vmin=0.1, vmax=int(m), colors=colors.LogNorm())
     im = plt.imshow(h2, norm=colors.LogNorm(), origin='lower', extent=(min_z/10., max_z/10., min_x/10., max_x/10.))
-    plt.savefig(output_movie+'.png')
+    # Generate line plots
+    lines = []
+    from particle import Particle
+
+    for id, traj in trajectories.items():
+        #if not id in [2,3]: continue
+        rprint(f'Plotting track #{id} of {traj.shape[0]} points ({len(traj.z)}, {len(traj.x)})')
+        row = particle_df.loc[particle_df['id'] == id].iloc[0]
+        pname = '$'+Particle.from_pdgid(row['pdg']).latex_name+"$"
+        e = row['energy']
+        line, = ax.plot(traj.z, traj.x, label=f'{pname}: {e:.0f} MeV')
+        lines.append(line)
+    plt.xlabel("z [cm]")
+    plt.ylabel("x [cm]")
+    # plt.xlim([min_x, max_x])
+    # plt.ylim([min_z, max_z])
+    plt.colorbar()
+    plt.legend(prop={'size': 6})
+    #plt.tight_layout()
+
+    plt.savefig(output_movie+'.png', dpi=800)
 
     if only_image:
         exit(0)
@@ -328,61 +335,13 @@ def main(input_data, output_movie, only_image, view):
 
     plt.xlabel("z [cm]")
     plt.ylabel("x [cm]")
-    # plt.xlim([min_x, max_x])
-    # plt.ylim([min_z, max_z])
-    plt.colorbar()
+
     plt.tight_layout()
 
     FFwriter = animation.FFMpegWriter(fps=fps)
-    ani.save(output_movie, writer=FFwriter, dpi=400)
+    ani.save(output_movie, writer=FFwriter, dpi=800)
 
 
-
-
-    # x_coord = []
-    # y_coord = []
-    # z_coord = []
-    # values = []
-
-    # #exit(0)
-    # fig = plt.figure()
-    # ax = fig.add_subplot()
-
-    # colorsMap='jet'
-    # cm = plt.get_cmap(colorsMap)
-
-    # cNorm = matplotlib.colors.Normalize(vmin=min(values), vmax=max(values))
-    # scalarMap = cmx.ScalarMappable(norm=cNorm, cmap=cm)
-
-    # ax.scatter(z_coord, x_coord, marker='o', c=scalarMap.to_rgba(values))
-    # scalarMap.set_array(values)
-
-    # ax.set_xlabel('Z')
-    # # ax.set_ylabel('Y Label')
-    # ax.set_ylabel('X')
-
-    # plt.show()
-    # exit(0)
-
-    # #exit(0)
-    # fig = plt.figure()
-    # ax = fig.add_subplot(projection='3d')
-
-    # colorsMap='jet'
-    # cm = plt.get_cmap(colorsMap)
-
-    # cNorm = matplotlib.colors.Normalize(vmin=min(values), vmax=max(values))
-    # scalarMap = cmx.ScalarMappable(norm=cNorm, cmap=cm)
-
-    # ax.scatter(x_coord, y_coord, z_coord, marker='o', c=scalarMap.to_rgba(values))
-    # scalarMap.set_array(values)
-
-
-    # ax.set_xlabel('X Label')
-    # ax.set_ylabel('Y Label')
-    # ax.set_zlabel('Z Label')
-
-    # plt.show()
 
 if __name__ == "__main__":
     main()

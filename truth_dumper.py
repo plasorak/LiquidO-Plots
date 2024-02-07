@@ -1,7 +1,7 @@
 
 
 
-def dump_truth_info(input_data):
+def dump_truth_info(input_data, energy_cut, ignore_pdgs):
     import awkward as ak
     import numpy as np
     import uproot
@@ -44,6 +44,9 @@ def dump_truth_info(input_data):
 
     for ip, id in enumerate(particle_ids):
         index = particle_df[particle_df['id'] == id].index
+
+        if particle_pdgs[ip] in ignore_pdgs:
+            continue
 
         if not index.empty:
             index = index[0]
@@ -116,6 +119,8 @@ def dump_truth_info(input_data):
     particle_df = particle_df.reset_index()  # make sure indexes pair with number of rows
 
     for _, row in particle_df.iterrows():
+        if row['energy'] < energy_cut:
+            continue
         t.add_row(
             str(row['id']), str(row['pdg']),
             row['name'], f"{row['energy']:.1f}",
@@ -135,3 +140,4 @@ def dump_truth_info(input_data):
         )
 
     rprint(t)
+    return particle_df
