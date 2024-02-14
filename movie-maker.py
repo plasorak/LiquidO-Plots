@@ -10,6 +10,7 @@ np.set_printoptions(threshold=sys.maxsize)
 from particle import Particle
 import click
 import pandas as pd
+plt.rcParams['animation.ffmpeg_path'] = '/nashome/p/plasorak/ffmpeg-git-20240112-amd64-static/ffmpeg'
 
 # TODO: here
 # - Add truth information
@@ -45,7 +46,7 @@ def main(input_data, output_movie, only_image, view, energy_cut):
 
     rprint(f'nhits {len(hit_x)}')
 
-    if view == 'z':
+    if view == 'yz':
         hit_x = hit_x[hit_is_xz]
         hit_y = hit_y[hit_is_xz]
         hit_z = hit_z[hit_is_xz]
