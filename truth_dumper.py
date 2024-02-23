@@ -47,6 +47,9 @@ def dump_truth_info(input_data, energy_cut, ignore_pdgs):
 
         if particle_pdgs[ip] in ignore_pdgs:
             continue
+        
+        if abs(particle_pdgs[ip])> 3000:
+            continue
 
         if not index.empty:
             index = index[0]

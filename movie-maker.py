@@ -6,10 +6,11 @@ import uproot
 from rich import print as rprint
 import matplotlib.animation as animation
 import sys
-np.set_printoptions(threshold=sys.maxsize)
+#np.set_printoptions(threshold=sys.maxsize)
 from particle import Particle
 import click
 import pandas as pd
+plt.rcParams['animation.ffmpeg_path'] = '/afs/cern.ch/user/p/plasorak/ffmpeg-6.1-amd64-static/ffmpeg'
 
 # TODO: here
 # - Add truth information
@@ -18,9 +19,10 @@ import pandas as pd
 @click.argument('input_data', type=click.Path(exists=True))
 @click.argument('output_movie', type=click.Path())
 @click.option('--only-image', is_flag=True, default=False)
+@click.option('--only-prompt-movie', is_flag=True, default=False)
 @click.option('--view', type=click.Choice(['xz', 'yz']), default='yz')
 @click.option('-e', '--energy-cut', type=float, default=0)
-def main(input_data, output_movie, only_image, view, energy_cut):
+def main(input_data, output_movie, only_image, only_prompt_movie, view, energy_cut):
 
     hit_lifetime_ns_1 = 2.
     hit_lifetime_ns_2 = 100.
@@ -45,7 +47,7 @@ def main(input_data, output_movie, only_image, view, energy_cut):
 
     rprint(f'nhits {len(hit_x)}')
 
-    if view == 'z':
+    if view == 'yz':
         hit_x = hit_x[hit_is_xz]
         hit_y = hit_y[hit_is_xz]
         hit_z = hit_z[hit_is_xz]
@@ -58,17 +60,19 @@ def main(input_data, output_movie, only_image, view, energy_cut):
 
     rprint(f'nhits {len(hit_x)}')
 
-    im = plt.hist2d(hit_z, hit_x, bins=[100,100])
+    if view == "xz":
+        im = plt.hist2d(hit_z, hit_x, bins=[100,100])
+        plt.xlabel("z [cm]")
+        plt.ylabel("x [cm]")
+    elif view == "yz":
+        im = plt.hist2d(hit_z, hit_y, bins=[100,100])
+        plt.xlabel("z [cm]")
+        plt.ylabel("y [cm]")
 
-    plt.xlabel("z [cm]")
-    plt.ylabel("x [cm]")
-    # plt.xlim([min_x, max_x])
-    # plt.ylim([min_z, max_z])
     plt.colorbar()
     plt.tight_layout()
 
     plt.savefig(output_movie+'.hits.png', dpi=800)
-    #exit()
 
     particle_x            = ak.to_numpy(mc_truth['i_pos_x'])
     particle_y            = ak.to_numpy(mc_truth['i_pos_y'])
@@ -116,14 +120,19 @@ def main(input_data, output_movie, only_image, view, energy_cut):
 
     trajectories = {}
     for _, row in particle_df.iterrows():
+        
+        if abs(row['pdg']) > 3000: # need to select only the one that ain't stable
+            continue
+        
         if row['energy'] < energy_cut:
             continue
+        
         df = pd.DataFrame(columns=['x', 'y', 'z', 't'])
         trajectories[row['id']] = fill_trajectory(df, row['id'])
-        rprint(trajectories[row['id']])
+        # rprint(trajectories[row['id']])
     rprint(trajectories.keys())
 
-    view_str = f'is_{view}'
+    view_str = 'is_yz' if view == 'xz' else 'is_xz'
     fiber_x = ak.to_numpy(geom_data['fiber_x_min'][geom_data[view_str]])
     fiber_y = ak.to_numpy(geom_data['fiber_y_min'][geom_data[view_str]])
     fiber_z = ak.to_numpy(geom_data['fiber_z_min'][geom_data[view_str]])
@@ -137,7 +146,11 @@ def main(input_data, output_movie, only_image, view, energy_cut):
 
     times = np.arange(0, cut_ns, 2)
     times = np.append(times, np.arange(cut_ns, max_time+1, print_every_ns/fps))
-
+    
+    if only_prompt_movie:
+        times = np.arange(0, 50, 2)
+        hit_lifetime_ns_1 = 10
+        
     max_hit_x   = np.max(hit_x)
     min_hit_x   = np.min(hit_x)
     max_part_x  = np.max(particle_x)
@@ -207,23 +220,31 @@ def main(input_data, output_movie, only_image, view, energy_cut):
     mask_x_2 = fiber_x>min_x
     mask_x = mask_x_1 * mask_x_2
 
+    mask_y_1 = fiber_y<max_y
+    mask_y_2 = fiber_y>min_y
+    mask_y = mask_y_1 * mask_y_2
+
     mask_z_1 = fiber_z<max_z
     mask_z_2 = fiber_z>min_z
     mask_z = mask_z_1 * mask_z_2
 
+
     bins_x = np.unique(np.sort(fiber_x[mask_x]))
+    bins_y = np.unique(np.sort(fiber_y[mask_y]))
     bins_z = np.unique(np.sort(fiber_z[mask_z]))
 
     rprint(f'''Size of the 3D histogram:
 - x: {bins_x.shape[0]} bins {np.min(bins_x)} -> {np.max(bins_x)}
+- y: {bins_y.shape[0]} bins {np.min(bins_y)} -> {np.max(bins_y)}
 - z: {bins_z.shape[0]} bins {np.min(bins_z)} -> {np.max(bins_z)}
-- total voxels: {bins_x.shape[0]*bins_z.shape[0]}
+- total pixels XZ: {bins_x.shape[0]*bins_z.shape[0]}
+- total pixels YZ: {bins_y.shape[0]*bins_z.shape[0]}
 ''')
 
     fig, ax = plt.subplots()
 
 
-    def make_histogram(hit_x, hit_z, hit_t, time_ns:float=None, discard=False):
+    def make_histogram(hx, hy, ht, bx, by, time_ns:float=None):
         discard = False
         # hit time:
         # | |  | |    |             |     | | ||
@@ -233,51 +254,55 @@ def main(input_data, output_movie, only_image, view, energy_cut):
         # o o  | |    |             |     o o oo
         rprint(f'Time: {time_ns} ns')
 
-        if time_ns is None:
-            mask_future = hit_t>0
 
-        elif discard:
+        if not time_ns is None:
+            
             if time_ns<cut_ns:
                 hit_lifetime_ns = hit_lifetime_ns_1
             else:
                 hit_lifetime_ns = hit_lifetime_ns_2
-
-            mask_past = hit_t>time_ns-hit_lifetime_ns
-            rprint(f"{len(hit_x)} before discarding hits in the past")
-            # definitely discard the hits in the past to increase speed
-            hit_x = hit_x[mask_past]
-            hit_z = hit_z[mask_past]
-            hit_t = hit_t[mask_past]
-            rprint(f"{len(hit_x)} after discarding hits in the past")
-            mask_future = hit_t<time_ns
-        else:
-            if time_ns<cut_ns:
-                hit_lifetime_ns = hit_lifetime_ns_1
-            else:
-                hit_lifetime_ns = hit_lifetime_ns_2
+                
             mask_past = hit_t>time_ns-hit_lifetime_ns
             mask_future = hit_t<time_ns
             mask_future = mask_future * mask_past
-
-
+            
+        else:
+            mask_future = ht>0
 
         histogram, _ = np.histogramdd(
-            (hit_z[mask_future], hit_x[mask_future]),
-            bins=(bins_z, bins_x),
+            (hx[mask_future], hy[mask_future]),
+            bins=(bx, by),
             range=None,
             density=None,
             weights=None
         )
+
         return histogram.T
 
+    
     def make_lines(time_ns:float=None):
-
         pass
 
-    h2 = make_histogram(hit_x, hit_z, hit_t, None)
-    max_hits = np.max(h2)
 
+    if view == 'xz':
+        h2 = make_histogram(hit_z, hit_x, hit_t, bins_z, bins_x, None)
+    elif view == 'yz':
+        h2 = make_histogram(hit_z, hit_y, hit_t, bins_z, bins_y, None)
+        
+    extent = (min_z/10., max_z/10., min_x/10., max_x/10.) if view == 'xz' else (min_z/10., max_z/10., min_y/10., max_y/10.)
 
+    im = plt.imshow(h2, norm=colors.LogNorm(), origin='lower', extent=extent)
+    
+    if view == 'xz':
+        plt.xlabel("z [cm]")
+        plt.ylabel("x [cm]")
+    elif view == 'yz':
+        plt.xlabel("z [cm]")
+        plt.ylabel("y [cm]")
+
+    plt.colorbar()
+
+    plt.savefig(output_movie+'_no_particles.png', dpi=800)
 
     timeText = ax.text(0.05, 0.05, '', ha="left", va="top", transform=ax.transAxes)
 
@@ -285,20 +310,20 @@ def main(input_data, output_movie, only_image, view, energy_cut):
 
     from rich.progress import Progress
     progress = Progress()
-    task = progress.add_task("[green]Processing movie...", total=max_time)
+    task = progress.add_task("[green]Processing movie...", total=np.max(times))
 
     def roll(time_ns:float):
         progress.update(task, completed=time_ns)
-        h = make_histogram(hit_x, hit_z, hit_t, time_ns, True)
+        if view == 'xz':
+            h = make_histogram(hit_z, hit_x, hit_t, bins_z, bins_x, time_ns)
+        elif view == 'yz':
+            h = make_histogram(hit_z, hit_y, hit_t, bins_z, bins_y, time_ns)
+            
         timeText.set_text("{:.2f} ns".format(time_ns))
-
-        # for u in linesToUpdate[timeIndex]:
-        #     trackLocal = trackList[u][i_timeCuts[timeIndex]]
-        #     plotList[u].set_data(trackLocal['i_pos_x'], trackLocal['i_pos_y'])
 
         im.set_data(h)
 
-    im = plt.imshow(h2, norm=colors.LogNorm(), origin='lower', extent=(min_z/10., max_z/10., min_x/10., max_x/10.))
+        
     # Generate line plots
     lines = []
     from particle import Particle
@@ -311,13 +336,8 @@ def main(input_data, output_movie, only_image, view, energy_cut):
         e = row['energy']
         line, = ax.plot(traj.z, traj.x, label=f'{pname}: {e:.0f} MeV')
         lines.append(line)
-    plt.xlabel("z [cm]")
-    plt.ylabel("x [cm]")
-    # plt.xlim([min_x, max_x])
-    # plt.ylim([min_z, max_z])
-    plt.colorbar()
+
     plt.legend(prop={'size': 6})
-    #plt.tight_layout()
 
     plt.savefig(output_movie+'.png', dpi=800)
 
@@ -333,8 +353,12 @@ def main(input_data, output_movie, only_image, view, energy_cut):
         blit=False
     )
 
-    plt.xlabel("z [cm]")
-    plt.ylabel("x [cm]")
+    if view == 'xz':
+        plt.xlabel("z [cm]")
+        plt.ylabel("x [cm]")
+    elif view == 'yz':
+        plt.xlabel("z [cm]")
+        plt.ylabel("y [cm]")
 
     plt.tight_layout()
 
