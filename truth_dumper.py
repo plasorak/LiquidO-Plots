@@ -119,7 +119,8 @@ def dump_truth_info(input_data, energy_cut, ignore_pdgs):
     particle_df = particle_df.reset_index()  # make sure indexes pair with number of rows
 
     for _, row in particle_df.iterrows():
-        if row['energy'] < energy_cut:
+        Particle.from_pdgid(particle_pdgs[ip].item()).mass
+        if row['energy'] < energy_cut or abs(particle_pdgs[ip].item()) >3000:
             continue
         t.add_row(
             str(row['id']), str(row['pdg']),
