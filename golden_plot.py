@@ -1,4 +1,3 @@
-import awkward as ak
 import matplotlib.pyplot as plt
 from matplotlib import colors
 import numpy as np
@@ -60,6 +59,8 @@ def add_padding(left, right, side:str, padding:float=0.):
     return number
 
 
+def get_norm(x_min, x_max, y_min, y_max):
+    return np.sqrt((x_max - x_min)*(x_max - x_min) + (y_max - y_min)*(y_max - y_min))
 
 def add_truth_particle(ax, hit_data, hit_key_x, hit_key_y, truth_data, x_min, x_max, y_min, y_max, time_start, time_end):
 
@@ -84,8 +85,9 @@ def add_truth_particle(ax, hit_data, hit_key_x, hit_key_y, truth_data, x_min, x_
             plotted_track_ids += [id]
             primary += [id]
 
-        n_hits = np.count_nonzero(hit_data[hit_data['h_track_id']==id])
+        n_hits = hit_data[hit_data['h_primary_id']==id].shape[0]
         if n_hits>100:
+            print(n_hits)
             plotted_track_ids += [id]
 
 
@@ -104,22 +106,32 @@ def add_truth_particle(ax, hit_data, hit_key_x, hit_key_y, truth_data, x_min, x_
         p = Particle.from_pdgid(pdg)
         e = np.max(this_track['i_E'])
         M = p.mass
+        if M is None and abs(pdg) in [12, 14, 16]:
+            M = 0
+
         ke = e - M
+        rprint(f"{pdg=} {M=} {ke=} {e=} {p.name=}")
+
 
         primary_str = ' (primary)' if id in primary else ''
         rprint(f"Plotting {pdg}{primary_str}")
-        rprint(f"{xs=}\n{ys=}")
 
-        if np.max(xs) - np.min(xs) > 100:
+        norm = get_norm(
+            np.min(xs), np.max(xs),
+            np.min(ys), np.max(ys),
+        )
+        diag = get_norm(x_min, x_max, y_min, y_max)
+
+        if norm > 0.01*diag:
             lines = ax.plot(
                 xs,
                 ys,
                 linewidth=2,
-                label = f'${p.latex_name}$ KE {ke:.1f} MeV{primary_str}',
+                label = f'${p.latex_name}$ KE {ke:.1f} MeV{primary_str}' if p is not None else f'{pdg} E {e} MeV',
                 color = particle_color[id] if id in particle_color else None,
             )
             particle_color[id] = lines[0].get_c()
-        else:
+        elif id in primary:
             #x_min, x_max, y_min, y_max
 
             xs = xs.array
@@ -128,10 +140,13 @@ def add_truth_particle(ax, hit_data, hit_key_x, hit_key_y, truth_data, x_min, x_
             y0 = ys[0]
             dx = (xs[1]-xs[0])
             dy = (ys[1]-ys[0])
+            norm = get_norm(
+                xs[0], xs[1],
+                ys[0], ys[1]
+            )
 
-            norm = np.sqrt((dx*dx) + (dy*dy))
-            new_norm = 0.05*np.sqrt((x_max - x_min)*(x_max - x_min) + (y_max - y_min)*(y_max - y_min))
-            factor =new_norm / norm
+            new_norm = 0.05 * diag
+            factor = new_norm / norm
             new_dx = dx * factor
             new_dy = dy * factor
 
@@ -139,12 +154,13 @@ def add_truth_particle(ax, hit_data, hit_key_x, hit_key_y, truth_data, x_min, x_
                 x0,y0,
                 new_dx, new_dy,
                 linewidth=2,
-                head_width=6,
+                head_width=50,
                 fc ='black', ec ='black',
                 label = f'${p.latex_name}$ KE {ke:.1f} MeV{primary_str}',
                 #color = particle_color[id] if id in particle_color else None,
             )
             #particle_color[id] = lines.get_color()
+
 
 
 def plot(
@@ -160,7 +176,7 @@ def plot(
     label_y,
     time_start,
     time_end,
-    padding = 10,
+    padding = 0,
     with_underlay=True,
     with_legend=False,
 ):
@@ -213,7 +229,7 @@ def plot(
 
         ax.annotate(
             label,
-            (0.025, 0.975) if not with_underlay else (0.05, 0.95),
+            (0.05, 0.95),# if not with_underlay else (0.05, 0.95),
             xycoords='axes fraction',
             va='center'
         )
@@ -227,7 +243,32 @@ def plot(
     if with_legend:
         ax.legend().set_zorder(20)
 
+    ax.set_aspect('equal', adjustable='box')
 
+    from mpl_toolkits.axes_grid1.anchored_artists import AnchoredSizeBar
+
+    width = x_max - x_min
+    size_args = (1000, '1 m')
+
+    if width < 500:
+        size_args = (100, '10 cm')
+    elif width < 1000:
+        size_args = (200, '20 cm')
+    elif width < 2000:
+        size_args = (500, '50 cm')
+
+    scalebar = AnchoredSizeBar(
+        ax.transData,
+        *size_args,
+        'lower left',
+        pad=0.1,
+        color='red',
+        frameon=False,
+        size_vertical=1)
+
+    ax.add_artist(scalebar)
+
+    return x_min, x_max, y_min, y_max
 
 @click.command()
 @click.argument('input_data', type=click.Path(exists=True))
@@ -255,6 +296,7 @@ def main(input_data, output, hit_threshold, view, highest_hit_contributors):
     rprint(truth_data)
 
     time_binning = np.arange(0.,np.max(hit_data['h_time']), hit_lifetime_ns)
+    # time_binning = np.arange(0.,np.min(10_000,np.max(hit_data['h_time'])), hit_lifetime_ns)
     time_counts, _ = np.histogram(hit_data['h_time'], bins=time_binning)
 
     class Cluster:
@@ -353,7 +395,7 @@ def main(input_data, output, hit_threshold, view, highest_hit_contributors):
 
         cluster_table.add_row(str(i), str(cluster.start), str(cluster.stop), str(cluster.n_hits))
 
-        padding = 10
+        padding = 0
 
         label = f'{alphabet[count_total]})'
 
@@ -365,9 +407,9 @@ def main(input_data, output, hit_threshold, view, highest_hit_contributors):
 
         ax = axclus[i-1] if i>0 else axfull
 
-        plot(
+        x_min, x_max, y_min, y_max = plot(
             ax = ax,
-            label = None,
+            label = label,
             hit_data = hit_data,
             hit_key_x = hit_x_key,
             hit_key_y = hit_y_key,
@@ -386,7 +428,7 @@ def main(input_data, output, hit_threshold, view, highest_hit_contributors):
 
         if i>0:
             from matplotlib.patches import Rectangle
-            #regions[label] = Rectangle([x_min, y_min], width=x_max-x_min, height=y_max-y_min)
+            regions[label] = Rectangle([x_min, y_min], width=x_max-x_min, height=y_max-y_min)
 
         ax.tick_params(bottom=False, labelbottom=False, left=False, labelleft=False)
 
