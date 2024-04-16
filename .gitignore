@@ -2,3 +2,5 @@ venv
 *.mp4
 *.mac
 *.root
+*.png
+__pycache__
