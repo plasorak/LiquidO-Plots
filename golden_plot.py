@@ -176,12 +176,16 @@ def plot(
     label_y,
     time_start,
     time_end,
+    x_min,
+    x_max,
+    y_min,
+    y_max,
     padding = 0,
     with_underlay=True,
     with_legend=False,
 ):
     hit_data_present = hit_data.where(hit_data["h_time"]>time_start, inplace=False)# * hit_data["h_time"]<time_end
-    hit_data_present = hit_data_present.where(hit_data["h_time"]<time_end)# * hit_data["h_time"]<time_end
+    hit_data_present = hit_data_present.where(hit_data_present["h_time"]<time_end, inplace=False)# * hit_data["h_time"]<time_end
 
     hit_counts, xedges, yedges = np.histogram2d(
         hit_data_present[hit_key_x],
@@ -211,13 +215,19 @@ def plot(
     hit_counts = np.ma.masked_array(hit_counts, hit_counts<0.5)
     i = ax.pcolormesh(X, Y, hit_counts, norm='log', rasterized=True, vmin=np.min(hit_counts), vmax=np.max(hit_counts))
 
-    x_min = add_padding(np.min(hit_data_present[hit_key_x]), np.max(hit_data_present[hit_key_x]), 'left',  padding)
-    x_max = add_padding(np.min(hit_data_present[hit_key_x]), np.max(hit_data_present[hit_key_x]), 'right', padding)
+    x_min = np.min(hit_data_present[hit_key_x]) if x_min is None else x_min
+    x_max = np.max(hit_data_present[hit_key_x]) if x_max is None else x_max
+    y_min = np.min(hit_data_present[hit_key_y]) if y_min is None else y_min
+    y_max = np.max(hit_data_present[hit_key_y]) if y_max is None else y_max
 
-    y_min = add_padding(np.min(hit_data_present[hit_key_y]), np.max(hit_data_present[hit_key_y]), 'left',  padding)
-    y_max = add_padding(np.min(hit_data_present[hit_key_y]), np.max(hit_data_present[hit_key_y]), 'right', padding)
+    rprint(f'{x_min=} {x_max=} {y_min=} {y_max=}')
 
-    if False:#with_underlay:
+    x_min = add_padding(x_min, x_max, 'left',  padding)
+    x_max = add_padding(x_min, x_max, 'right', padding)
+    y_min = add_padding(y_min, y_max, 'left',  padding)
+    y_max = add_padding(y_min, y_max, 'right', padding)
+
+    if with_underlay:
         add_truth_particle(ax, hit_data_past, hit_key_x, hit_key_y, truth_data, x_min, x_max, y_min, y_max, 0, time_end)
 
     add_truth_particle(ax, hit_data_present, hit_key_x, hit_key_y, truth_data, x_min, x_max, y_min, y_max, time_start, time_end)
@@ -270,13 +280,18 @@ def plot(
 
     return x_min, x_max, y_min, y_max
 
+def merge_callback(ctx, param, value):
+    return value.split(',')
+
 @click.command()
 @click.argument('input_data', type=click.Path(exists=True))
 @click.argument('output', type=click.Path(exists=False))
 @click.option('--hit-threshold', type=int, default=None, help='Plot truth data from the tracks that have at least this number of hits')
 @click.option('--view', type=str, default='xz')
+@click.option('--no-reindex', is_flag=True, default=False)
 @click.option('--highest-hit-contributors', type=int, default=None, help='Plot truth data from the number of tracks that contribute to the most number of hits')
-def main(input_data, output, hit_threshold, view, highest_hit_contributors):
+@click.option('--merge-clusters', type=str, default="a", help='a list of list of clusters to merge: format = "abc,def" to merge a, b and c together, and d, e and f together', callback=merge_callback)
+def main(input_data, output, hit_threshold, view, no_reindex, highest_hit_contributors, merge_clusters):
 
     if hit_threshold is None and highest_hit_contributors is None:
         hit_threshold = 1000
@@ -295,49 +310,77 @@ def main(input_data, output, hit_threshold, view, highest_hit_contributors):
     rprint('truth_data')
     rprint(truth_data)
 
+    hit_x_key = "h_pos_z"
+    hit_y_key = "h_pos_x" if view == 'xz' else 'h_pos_y'
+
+    hit_x = hit_data[hit_x_key]
+    hit_y = hit_data[hit_y_key]
+
     time_binning = np.arange(0.,np.max(hit_data['h_time']), hit_lifetime_ns)
-    # time_binning = np.arange(0.,np.min(10_000,np.max(hit_data['h_time'])), hit_lifetime_ns)
     time_counts, _ = np.histogram(hit_data['h_time'], bins=time_binning)
 
-    class Cluster:
-        def __init__(self, start):
-            self.start = start
-            self.stop = start
-            self.n_hits = 0
-            self.max_hits = 0
+    from time_cluster_maker import TimeClusterMaker
+    time_cluster_maker = TimeClusterMaker(time_binning, time_counts, hit_lifetime_ns)
+    time_cluster_maker.run_edge_detector()
+    time_clusters = time_cluster_maker.clusters
+    # Manually make the first cluster include all the hit
+    time_clusters[0].stop = time_clusters[-1].stop
 
-        def grow(self, until, nhits):
-            self.stop = until
-            self.n_hits += nhits
-            if nhits > self.max_hits:
-                self.max_hits = nhits
-
-    current_cluster = None
-    clusters = []
-    from copy import deepcopy as dc
-
-    for ibins, nhit in np.ndenumerate(time_counts):
-        if current_cluster is not None: # already growing a cluster
-            if nhit>0: # some hits, we continue to grow
-                current_cluster.grow(time_binning[ibins]+hit_lifetime_ns, nhit)
-            elif nhit==0: # no hits, stop the cluster
-                clusters.append(dc(current_cluster))
-                current_cluster = None
-        else: # not in a cluster
-            if nhit>0: # need to start a new cluster
-                current_cluster = Cluster(time_binning[ibins])
-                current_cluster.grow(time_binning[ibins]+hit_lifetime_ns, nhit)
-            elif nhit==0:
-                pass
-
-    n_decay_clusters = len(clusters) - 1
+    n_decay_clusters = len(time_clusters) - 1
     rprint(f'before removing: {n_decay_clusters=}')
-    clusters = [cluster for cluster in clusters if cluster.n_hits>100]
-    n_decay_clusters = len(clusters) - 1
+    time_clusters = [cluster for cluster in time_clusters if cluster.n_hits>100]
+    n_decay_clusters = len(time_clusters) - 1
     rprint(f'after removing: {n_decay_clusters=}')
 
+
+    from time_cluster_maker import Cluster
+    clusters = {}
+
+
+    from dbscan import DBScan
+
+    alphabet = 'abcdefghijklmnopqrstuvwxyz'
+    overall_index = 1
+
+    for i, time_cluster in enumerate(time_clusters):
+
+        if i == 0:
+            clusters[alphabet[0]] = Cluster.get_from_time_and_space_clusters(time_cluster, None)
+            continue
+
+        mask_past   = hit_data["h_time"]>time_cluster.start
+        mask_future = hit_data["h_time"]<time_cluster.stop
+        mask = mask_past * mask_future
+
+        hit_x_ = np.array(hit_x[mask].values)
+        hit_y_ = np.array(hit_y[mask].values)
+
+        dbscan = DBScan(eps=500, min_hits=5, hit_x=hit_x_, hit_y=hit_y_)
+        dbscan.run()
+        for j, space_cluster in enumerate(dbscan.clusters):
+            clusters[alphabet[overall_index]] = Cluster.get_from_time_and_space_clusters(time_clusters[i], space_cluster)
+            rprint(f"""Time cluster {i} & space cluster {j} created cluster {overall_index}
+{clusters[alphabet[overall_index]]}
+""")
+            overall_index += 1
+
     n_decay_clusters = len(clusters) - 1
+    rprint(f'after space clustering: {n_decay_clusters=}')
+
+    for merge in merge_clusters:
+        clusters_to_merge = [cluster for label, cluster in clusters.items() if label in merge]
+        new_label = merge[0]
+        new_cluster = Cluster.union(clusters_to_merge)
+        for label in merge:
+            del clusters[label]
+        clusters[new_label] = new_cluster
+
+    n_decay_clusters = len(clusters) - 1
+    rprint(f'after merging clustering: {n_decay_clusters=}')
+
     fig = plt.figure(figsize=(10,8))
+
+    n_decay_clusters = len(clusters) - 1
 
     nrows = 3
     ncols_clusters = int(np.ceil(n_decay_clusters/(nrows-1)))
@@ -367,45 +410,68 @@ def main(input_data, output, hit_threshold, view, highest_hit_contributors):
     y_max = np.max(time_counts)*10
     axtime.set_ylim((0.5, y_max))
 
-    hit_x_key = "h_pos_z"
-    hit_y_key = "h_pos_x" if view == 'xz' else 'h_pos_y'
 
     binning_x = np.arange(-7477.5, 7577.5, 30) if view == 'xz' else np.arange(-7477.5+15, 7577.5+15, 30)
     binning_y = np.arange(-2625,   2625,   15) if view == 'xz' else np.arange(-2640,      2640,      15)
 
     from rich.table import Table
 
-    cluster_table = Table('Cluster', 'Min time', 'Max time', "Number of hits", title="Time clusters")
+    cluster_table = Table(
+        'Cluster number',
+        'Min time',
+        'Max time',
+        'Min X',
+        'Max X',
+        'Min Y',
+        'Max Y',
+        "Number of hits",
+        title="Clusters"
+    )
 
     masks = {}
     first_cluster = False
     count1 = 0
     count2 = 3
     count_total = 0
-    alphabet = 'abcdefghijklmnopqrstuvwxyz'
 
     regions = {}
     time_annotation = {}
 
-    for i, cluster in enumerate(clusters):
+    clusters = dict(sorted(clusters.items()))
+    if not no_reindex:
+        new_clusters = {}
+        for i, cluster in enumerate(clusters.values()):
+            label = alphabet[i-1] if i>0 else 'all'
+            new_clusters[label] = cluster
+
+        clusters = new_clusters
+    else:
+        clusters['all (a)'] = clusters.pop('a')
+
+
+    for label, cluster in clusters.items():
 
         if count1>3:
             count1 = 0
             count2 += 1
 
-        cluster_table.add_row(str(i), str(cluster.start), str(cluster.stop), str(cluster.n_hits))
+        cluster_table.add_row(
+            label,
+            str(cluster.time_start), str(cluster.time_stop),
+            str(cluster.x_min), str(cluster.x_max),
+            str(cluster.y_min), str(cluster.y_max),
+            str(cluster.n_hits)
+        )
 
         padding = 0
 
-        label = f'{alphabet[count_total]})'
-
         axtime.annotate(
             label,
-            xy=(cluster.start, cluster.max_hits*3),
+            xy=(cluster.time_start, cluster.n_hits*3),
             xycoords='data'
         )
 
-        ax = axclus[i-1] if i>0 else axfull
+        ax = axclus[count_total-1] if count_total>0 else axfull
 
         x_min, x_max, y_min, y_max = plot(
             ax = ax,
@@ -418,15 +484,18 @@ def main(input_data, output, hit_threshold, view, highest_hit_contributors):
             truth_data = truth_data,
             label_x = None,
             label_y = None,
-            time_start = cluster.start,
-            time_end = cluster.stop,
+            time_start = cluster.time_start,
+            time_end = cluster.time_stop,
+            x_min = cluster.x_min,
+            x_max = cluster.x_max,
+            y_min = cluster.y_min,
+            y_max = cluster.y_max,
             with_legend = i==0,
             with_underlay = i>0,
-
         )
 
 
-        if i>0:
+        if count_total>0:
             from matplotlib.patches import Rectangle
             regions[label] = Rectangle([x_min, y_min], width=x_max-x_min, height=y_max-y_min)
 
