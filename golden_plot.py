@@ -222,10 +222,15 @@ def plot(
 
     rprint(f'{x_min=} {x_max=} {y_min=} {y_max=}')
 
-    x_min = add_padding(x_min, x_max, 'left',  padding)
-    x_max = add_padding(x_min, x_max, 'right', padding)
-    y_min = add_padding(y_min, y_max, 'left',  padding)
-    y_max = add_padding(y_min, y_max, 'right', padding)
+    x_min_padded = add_padding(x_min, x_max, 'left',  padding)
+    x_max_padded = add_padding(x_min, x_max, 'right', padding)
+    y_min_padded = add_padding(y_min, y_max, 'left',  padding)
+    y_max_padded = add_padding(y_min, y_max, 'right', padding)
+
+    x_min = x_min_padded
+    x_max = x_max_padded
+    y_min = y_min_padded
+    y_max = y_max_padded
 
     if with_underlay:
         add_truth_particle(ax, hit_data_past, hit_key_x, hit_key_y, truth_data, x_min, x_max, y_min, y_max, 0, time_end)
@@ -447,6 +452,7 @@ def main(input_data, output, hit_threshold, view, no_reindex, highest_hit_contri
         clusters = new_clusters
     else:
         clusters['all (a)'] = clusters.pop('a')
+        clusters = dict(sorted(clusters.items()))
 
 
     for label, cluster in clusters.items():
