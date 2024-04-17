@@ -58,6 +58,22 @@ def add_padding(left, right, side:str, padding:float=0.):
 
     return number
 
+def adjust_for_aspect_ratio(x_min, x_max, y_min, y_max, aspect_ratio):
+    current_aspect_ratio = (x_max - x_min) / (y_max - y_min)
+    if current_aspect_ratio > aspect_ratio:
+        y_center = (y_max + y_min) / 2
+        y_range = (x_max - x_min) / aspect_ratio
+        y_min = y_center - y_range / 2
+        y_max = y_center + y_range / 2
+    else:
+        x_center = (x_max + x_min) / 2
+        x_range = (y_max - y_min) * aspect_ratio
+        x_min = x_center - x_range / 2
+        x_max = x_center + x_range / 2
+    new_aspect_ratio = (x_max - x_min) / (y_max - y_min)
+    print(f'Aspect ratio: {current_aspect_ratio} -> {new_aspect_ratio}')
+    return x_min, x_max, y_min, y_max
+
 
 def get_norm(x_min, x_max, y_min, y_max):
     return np.sqrt((x_max - x_min)*(x_max - x_min) + (y_max - y_min)*(y_max - y_min))
@@ -180,9 +196,9 @@ def plot(
     x_max,
     y_min,
     y_max,
-    padding = 0,
-    with_underlay=True,
-    with_legend=False,
+    with_underlay = True,
+    with_legend = False,
+    aspect_ratio = 1,
 ):
     hit_data_present = hit_data.where(hit_data["h_time"]>time_start, inplace=False)# * hit_data["h_time"]<time_end
     hit_data_present = hit_data_present.where(hit_data_present["h_time"]<time_end, inplace=False)# * hit_data["h_time"]<time_end
@@ -220,17 +236,21 @@ def plot(
     y_min = np.min(hit_data_present[hit_key_y]) if y_min is None else y_min
     y_max = np.max(hit_data_present[hit_key_y]) if y_max is None else y_max
 
-    rprint(f'{x_min=} {x_max=} {y_min=} {y_max=}')
+    rprint(f'Before padding {x_min=} {x_max=} {y_min=} {y_max=}')
 
-    x_min_padded = add_padding(x_min, x_max, 'left',  padding)
-    x_max_padded = add_padding(x_min, x_max, 'right', padding)
-    y_min_padded = add_padding(y_min, y_max, 'left',  padding)
-    y_max_padded = add_padding(y_min, y_max, 'right', padding)
+    # x_min_padded = add_padding(x_min, x_max, 'left',  padding)
+    # x_max_padded = add_padding(x_min, x_max, 'right', padding)
+    # y_min_padded = add_padding(y_min, y_max, 'left',  padding)
+    # y_max_padded = add_padding(y_min, y_max, 'right', padding)
+
+    x_min_padded, x_max_padded, y_min_padded, y_max_padded = adjust_for_aspect_ratio(x_min, x_max, y_min, y_max, aspect_ratio)
 
     x_min = x_min_padded
     x_max = x_max_padded
     y_min = y_min_padded
     y_max = y_max_padded
+
+    rprint(f'After padding {x_min=} {x_max=} {y_min=} {y_max=}')
 
     if with_underlay:
         add_truth_particle(ax, hit_data_past, hit_key_x, hit_key_y, truth_data, x_min, x_max, y_min, y_max, 0, time_end)
@@ -276,7 +296,7 @@ def plot(
         ax.transData,
         *size_args,
         'lower left',
-        pad=0.1,
+        pad=1,
         color='red',
         frameon=False,
         size_vertical=1)
@@ -496,8 +516,9 @@ def main(input_data, output, hit_threshold, view, no_reindex, highest_hit_contri
             x_max = cluster.x_max,
             y_min = cluster.y_min,
             y_max = cluster.y_max,
-            with_legend = i==0,
-            with_underlay = i>0,
+            with_legend = count_total==0,
+            with_underlay = count_total>0,
+            aspect_ratio = 1,
         )
 
 
