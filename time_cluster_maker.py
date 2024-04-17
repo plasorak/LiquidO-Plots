@@ -153,3 +153,5 @@ class TimeClusterMaker:
                     self.clusters.append(dc(current_cluster))
                     current_cluster = None
 
+        if current_cluster:
+            self.clusters.append(dc(current_cluster))
