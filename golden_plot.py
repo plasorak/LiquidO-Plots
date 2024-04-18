@@ -95,15 +95,19 @@ def add_truth_particle(ax, hit_data, hit_key_x, hit_key_y, truth_data, x_min, x_
     plotted_track_ids = []
     primary = []
 
+    n_hits = len(hit_data)
+
     for id in all_track_ids:
         track_data = local_truth_data[local_truth_data['track_id'] == id]
         if (track_data['parent_id'] == 0).any():
             plotted_track_ids += [id]
             primary += [id]
+            continue
 
-        n_hits = hit_data[hit_data['h_primary_id']==id].shape[0]
-        if n_hits>100:
-            print(n_hits)
+        particle_hits = hit_data[hit_data['h_parent_id']==id]
+        this_n_hits = particle_hits.shape[0]
+        if this_n_hits>0.05*n_hits and this_n_hits>10:
+            rprint(f"Track {id} has {this_n_hits} hits, plotting")
             plotted_track_ids += [id]
 
 
@@ -139,11 +143,16 @@ def add_truth_particle(ax, hit_data, hit_key_x, hit_key_y, truth_data, x_min, x_
         diag = get_norm(x_min, x_max, y_min, y_max)
 
         if norm > 0.01*diag:
+            label = f'${p.latex_name}$ KE {ke:.1f} MeV{primary_str}' if p is not None else f'{pdg} E {e} MeV'
+
+            if id in particle_color:
+                label = None
+
             lines = ax.plot(
                 xs,
                 ys,
                 linewidth=2,
-                label = f'${p.latex_name}$ KE {ke:.1f} MeV{primary_str}' if p is not None else f'{pdg} E {e} MeV',
+                label = label,
                 color = particle_color[id] if id in particle_color else None,
             )
             particle_color[id] = lines[0].get_c()
