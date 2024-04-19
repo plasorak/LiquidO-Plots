@@ -48,7 +48,7 @@ class Cluster:
         y_min = np.min(hit_y_)
         y_max = np.max(hit_y_)
 
-        n_hits = len(hit_x)
+        n_hits = len(hit_x_)
 
         return Cluster(
             t_min=t_min,

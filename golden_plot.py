@@ -12,6 +12,9 @@ import pandas as pd
 from matplotlib.gridspec import GridSpec
 import matplotlib
 
+CB_color_cycle = ['#ff7f00', '#4daf4a',
+                  '#f781bf', '#a65628', '#984ea3', '#377eb8',
+                  '#999999', '#e41a1c', '#dede00']
 
 np.set_printoptions(threshold=sys.maxsize)
 
@@ -78,17 +81,12 @@ def adjust_for_aspect_ratio(x_min, x_max, y_min, y_max, aspect_ratio):
 def get_norm(x_min, x_max, y_min, y_max):
     return np.sqrt((x_max - x_min)*(x_max - x_min) + (y_max - y_min)*(y_max - y_min))
 
-def add_truth_particle(ax, hit_data, hit_key_x, hit_key_y, truth_data, x_min, x_max, y_min, y_max, time_start, time_end):
+def add_truth_particle(ax, hit_data, hit_key_x, hit_key_y, truth_data, x_min, x_max, y_min, y_max, time_start, time_end, plot_list, legend_label=None):
 
     global particle_color
 
     truth_key_x = hit_key_x.replace('h_pos_', 'i_pos_')
     truth_key_y = hit_key_y.replace('h_pos_', 'i_pos_')
-
-    local_truth_data = truth_data.where(truth_data[truth_key_x]>x_min)
-    local_truth_data.where(truth_data[truth_key_x]<x_max, inplace=True)
-    local_truth_data.where(truth_data[truth_key_y]>y_min, inplace=True)
-    local_truth_data.where(truth_data[truth_key_y]<y_max, inplace=True)
 
     all_track_ids = np.unique(local_truth_data['track_id'])
 
@@ -98,32 +96,16 @@ def add_truth_particle(ax, hit_data, hit_key_x, hit_key_y, truth_data, x_min, x_
     n_hits = len(hit_data)
 
     for id in all_track_ids:
-        # Plot all primary particles
-        track_data = local_truth_data[local_truth_data['track_id'] == id]
-        if (track_data['parent_id'] == 0).any():
-            plotted_track_ids += [id]
-            primary += [id]
-            continue
+        track_data = truth_data[truth_data['track_id'] == id]
+        track_data["x"] = track_data[truth_key_x]
+        track_data["y"] = track_data[truth_key_y]
 
-        # Plot all the particles that contribute to more than 5% of the hits
-        particle_hits = hit_data[hit_data['h_parent_id']==id]
-        this_n_hits = particle_hits.shape[0]
-        if this_n_hits>0.05*n_hits:
-            rprint(f"Track {id} has {this_n_hits} hits, plotting")
-            plotted_track_ids += [id]
-            continue
+        primary = (track_data['parent_id'] == 0).any()
 
-        # Plot all the neutrons
-        if (track_data['i_particle']==2112).any():
-            rprint(f"Track {id} is a neutron, plotting")
-            plotted_track_ids += [id]
-            continue
+        if not id in plot_list:
+            if not primary:
+                continue
 
-
-
-    for id in plotted_track_ids:
-
-        # mask1 = part_id<track_id+10
         mask = local_truth_data['track_id'] == id
         this_track = local_truth_data[mask]
         xs = this_track[truth_key_x]
@@ -143,6 +125,7 @@ def add_truth_particle(ax, hit_data, hit_key_x, hit_key_y, truth_data, x_min, x_
 
 
         primary_str = ' (primary)' if id in primary else ''
+        legend_str = f' {legend_label}' if legend_label else ''
         rprint(f"Plotting {pdg}{primary_str}")
 
         norm = get_norm(
@@ -152,7 +135,7 @@ def add_truth_particle(ax, hit_data, hit_key_x, hit_key_y, truth_data, x_min, x_
         diag = get_norm(x_min, x_max, y_min, y_max)
 
         if norm > 0.01*diag:
-            label = f'${p.latex_name}$ KE {ke:.1f} MeV{primary_str}' if p is not None else f'{pdg} E {e} MeV'
+            label = f'${p.latex_name}$ KE {ke:.1f} MeV{primary_str}{legend_str}' if p is not None else f'{pdg} E {e} MeV'
 
             if id in particle_color:
                 label = None
@@ -216,6 +199,7 @@ def plot(
     y_max,
     with_underlay = True,
     aspect_ratio = 1,
+    legend_label = None
 ):
     hit_data_present = hit_data.where(hit_data["h_time"]>time_start, inplace=False)# * hit_data["h_time"]<time_end
     hit_data_present = hit_data_present.where(hit_data_present["h_time"]<time_end, inplace=False)# * hit_data["h_time"]<time_end
@@ -265,9 +249,11 @@ def plot(
     rprint(f'After padding {x_min=} {x_max=} {y_min=} {y_max=}')
 
     if with_underlay:
-        add_truth_particle(ax, hit_data_past, hit_key_x, hit_key_y, truth_data, x_min, x_max, y_min, y_max, 0, time_end)
+        # add_truth_particle(ax, hit_data_past   , hit_key_x, hit_key_y, truth_data, x_min, x_max, y_min, y_max, 0         , time_end, plot_all_above=None)
+        add_truth_particle(ax, hit_data_present, hit_key_x, hit_key_y, truth_data, x_min, x_max, y_min, y_max, time_start, time_end, plot_all_above=0, legend_label=legend_label)
+    else:
+        add_truth_particle(ax, hit_data_present, hit_key_x, hit_key_y, truth_data, x_min, x_max, y_min, y_max, time_start, time_end, plot_all_above=None)
 
-    add_truth_particle(ax, hit_data_present, hit_key_x, hit_key_y, truth_data, x_min, x_max, y_min, y_max, time_start, time_end)
 
     ax.set_xlim((x_min, x_max))
     ax.set_ylim((y_min, y_max))
@@ -328,7 +314,15 @@ def merge_callback(ctx, param, value):
 @click.option('--highest-hit-contributors', type=int, default=None, help='Plot truth data from the number of tracks that contribute to the most number of hits')
 @click.option('--merge-clusters', type=str, default='', help='a list of list of clusters to merge: format = "abc,def" to merge a, b and c together, and d, e and f together', callback=merge_callback)
 @click.option('--label-cluster', type=str, multiple=True)
-def main(input_data, output, hit_threshold, view, no_reindex, highest_hit_contributors, merge_clusters, label_cluster):
+@click.option('--plot-list', type=str)
+def main(input_data, output, hit_threshold, view, no_reindex, highest_hit_contributors, merge_clusters, label_cluster, plot_list):
+
+    import json
+
+    if plot_list is not None:
+        plot_list = json.loads(plot_list)
+    else:
+        plot_list = {}
 
     if hit_threshold is None and highest_hit_contributors is None:
         hit_threshold = 1000
@@ -477,24 +471,28 @@ def main(input_data, output, hit_threshold, view, no_reindex, highest_hit_contri
     clusters = dict(sorted(clusters.items()))
     if not no_reindex: # if reindex
         time_ordered_cluster = {}
-        start_times = {}
-        for label, cluster in clusters.items():
-            start_times[cluster.t_min] = label
-        start_times = dict(sorted(start_times.items()))
-        print(start_times)
-        for i, label in enumerate(start_times.values()):
+        start_times = [cluster.t_min for cluster in clusters.values()]
+        labels = list(clusters.keys())
+        start_time_sorted_labels = [label for _, label in sorted(zip(start_times, labels))]
+        for i, label in enumerate(start_time_sorted_labels):
             time_ordered_cluster[alphabet[i]] = clusters[label]
         clusters = time_ordered_cluster
 
+    n_hits = [cluster.n_hits for cluster in clusters.values()]
+    labels = list(clusters.keys())
+    hit_sorted_labels = [label for _, label in sorted(zip(n_hits, labels))]
+
+    rprint(f"histogram plotting order: {hit_sorted_labels}")
 
     axtime.hist(
-        [cluster.hit_t for cluster in clusters.values()],
+        [clusters[label].hit_t for label in hit_sorted_labels],
         time_binning,
         log=True,
         histtype='bar',
         stacked=True,
         rasterized=True,
-        label=[f'Cluster {label}' for label in clusters.keys()]
+        label=[f'Cluster {label}' for label in hit_sorted_labels],
+        color=CB_color_cycle[:len(hit_sorted_labels)]
     )
 
     time_counts = np.zeros(len(time_binning)-1)
@@ -506,10 +504,11 @@ def main(input_data, output, hit_threshold, view, no_reindex, highest_hit_contri
     axtime.set_ylabel('Number of hits')
     y_max = np.max(time_counts)*10
     axtime.set_ylim((0.5, y_max))
-    axtime.legend()
 
-
-
+    handles, labels = axtime.get_legend_handles_labels()
+    sorted_labels = sorted(labels)
+    sorted_handles = [h for _, h in sorted(zip(labels, handles))]
+    axtime.legend(sorted_handles, sorted_labels)
 
     for label, cluster in clusters.items():
 
@@ -546,6 +545,8 @@ def main(input_data, output, hit_threshold, view, no_reindex, highest_hit_contri
             y_max = cluster.y_max,
             with_underlay = count_total>0,
             aspect_ratio = 1,
+            plot_list = plot_list.get(label, None),
+            legend_label = f"({label})" if count_total>0 else None,
         )
 
 
@@ -664,7 +665,12 @@ def main(input_data, output, hit_threshold, view, no_reindex, highest_hit_contri
                 )
 
 
-    axfull.legend().set_zorder(20)
+    handles, labels = axfull.get_legend_handles_labels()
+    for ax in axclus:
+        handles_insert, labels_insert = ax.get_legend_handles_labels()
+        handles += handles_insert
+        labels += labels_insert
+    axfull.legend(handles, labels).set_zorder(20)
 
     fig.savefig(output, dpi=400)
     rprint(cluster_table)

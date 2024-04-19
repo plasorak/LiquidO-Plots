@@ -1,7 +1,7 @@
 
 
 
-def dump_truth_info(input_data, energy_cut, ignore_pdgs):
+def dump_truth_info(input_data, energy_cut, ignore_pdgs=[]):
     import awkward as ak
     import numpy as np
     import uproot
@@ -41,15 +41,19 @@ def dump_truth_info(input_data, energy_cut, ignore_pdgs):
             (y1-y2)*(y1-y2) +
             (z1-z2)*(z1-z2)
         )
+    from anytree import Node, RenderTree
+
+    nodes = {}
+    root = Node('root')
 
     for ip, id in enumerate(particle_ids):
         index = particle_df[particle_df['id'] == id].index
 
         if particle_pdgs[ip] in ignore_pdgs:
             continue
-        
-        if abs(particle_pdgs[ip])> 3000:
-            continue
+        mass = Particle.from_pdgid(particle_pdgs[ip].item()).mass
+        if mass is None:
+            mass = 0
 
         if not index.empty:
             index = index[0]
@@ -60,7 +64,6 @@ def dump_truth_info(input_data, energy_cut, ignore_pdgs):
                 particle_df.loc[index, 'y_start'] = particle_y[ip]
                 particle_df.loc[index, 'z_start'] = particle_z[ip]
                 particle_df.loc[index, 'first_time'] = particle_t[ip]
-                particle_df.loc[index, 'energy'] = particle_energies[ip]
                 particle_df.loc[index, 'length'] = track_length(
                     particle_df.loc[index, 'x_start'],
                     particle_df.loc[index, 'x_end'],
@@ -69,6 +72,10 @@ def dump_truth_info(input_data, energy_cut, ignore_pdgs):
                     particle_df.loc[index, 'z_start'],
                     particle_df.loc[index, 'z_end']
                 )
+
+            if particle_df.loc[index, 'energy'] < particle_energies[ip] - mass:
+                particle_df.loc[index, 'energy'] = particle_energies[ip] - mass
+
             if particle_df['last_time'][index] < particle_t[ip]:
                 particle_df.loc[index, 'last_time'] = particle_t[ip]
                 particle_df.loc[index, 'x_end'] = particle_x[ip]
@@ -83,12 +90,13 @@ def dump_truth_info(input_data, energy_cut, ignore_pdgs):
                     particle_df.loc[index, 'z_end']
                 )
         else:
+            nodes[id] = Node(id)
             particle_df.loc[row_id] = [
                 id,
                 particle_pdgs[ip],
                 Particle.from_pdgid(particle_pdgs[ip].item()).name,
 
-                particle_energies[ip],
+                particle_energies[ip] - mass,
 
                 particle_t[ip],
                 particle_t[ip],
@@ -121,13 +129,37 @@ def dump_truth_info(input_data, energy_cut, ignore_pdgs):
 
     particle_df = particle_df.reset_index()  # make sure indexes pair with number of rows
 
+    n_rows = 0
+
+    def select(row):
+
+        # if abs(row['pdg']) == 11 and row['energy'] < 10:
+        #     return False
+
+        # if row['pdg'] == 22 and row['energy'] < 4:
+        #     return False
+
+        if row['length'] < 1 and row['pdg'] > 3000:
+            return False
+
+        return True
+
     for _, row in particle_df.iterrows():
-        Particle.from_pdgid(particle_pdgs[ip].item()).mass
-        if row['energy'] < energy_cut or abs(particle_pdgs[ip].item()) >3000:
+        if not select(row):
             continue
+        n_rows += 1
+        nodes[row['id']].parent = nodes[row['parent']] if row['parent'] in nodes else root
+
+
+    for pre, fill, node in RenderTree(root):
+        if node.name == 'root':
+            continue
+
+        row = particle_df.loc[particle_df['id'] == int(node.name)].iloc[0]
+
         t.add_row(
-            str(row['id']), str(row['pdg']),
-            row['name'], f"{row['energy']:.1f}",
+            pre + str(row['id']), str(row['pdg']),
+            str(row['name']), f"{row['energy']:.1f}",
             f"{row['first_time']:.2f}", f"{row['last_time']:0.2f}",
 
             f"{row['x_start']:.2f}", f"{row['x_end']:0.2f}",
@@ -144,4 +176,5 @@ def dump_truth_info(input_data, energy_cut, ignore_pdgs):
         )
 
     rprint(t)
+    rprint(f'There are {n_rows} rows')
     return particle_df
