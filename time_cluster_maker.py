@@ -1,5 +1,7 @@
 from rich import print as rprint
 from dataclasses import dataclass
+import numpy as np
+
 
 @dataclass
 class TimeCluster:
@@ -17,47 +19,59 @@ class TimeCluster:
 
 @dataclass
 class Cluster:
-    time_start:float
-    time_stop:float
+    t_min:float
+    t_max:float
     x_min:float
     x_max:float
     y_min:float
     y_max:float
     n_hits:int
-    max_hits:int
+    hit_x:np.ndarray
+    hit_y:np.ndarray
+    hit_t:np.ndarray
+    def __repr__(self):
+        return f"Cluster(t_min={self.t_min}, t_max={self.t_max}, x_min={self.x_min}, x_max={self.x_max}, y_min={self.y_min}, y_max={self.y_max}, n_hits={self.n_hits})"
 
     @staticmethod
-    def get_from_time_and_space_clusters(time_cluster, space_cluster):
-        time_start = time_cluster.start
-        time_stop = time_cluster.stop
-        x_min, x_max, y_min, y_max = None, None, None, None
-        n_hits = time_cluster.n_hits
-        max_hits = time_cluster.max_hits
-        if space_cluster is not None:
-            x_min, x_max, y_min, y_max = space_cluster.get_min_max()
-            n_hits = space_cluster.n_hits if space_cluster.n_hits < time_cluster.n_hits else time_cluster.n_hits
+    def get_from_data(x_min, x_max, y_min, y_max, t_min, t_max, hit_x, hit_y, hit_t):
+        mask =        (hit_t >= t_min) & (hit_t <= t_max)
+        mask = mask & (hit_x >= x_min) & (hit_x <= x_max)
+        mask = mask & (hit_y >= y_min) & (hit_y <= y_max)
+        hit_t_ = hit_t[mask]
+        hit_x_ = hit_x[mask]
+        hit_y_ = hit_y[mask]
+
+        t_min = np.min(hit_t_)
+        t_max = np.max(hit_t_)
+        x_min = np.min(hit_x_)
+        x_max = np.max(hit_x_)
+        y_min = np.min(hit_y_)
+        y_max = np.max(hit_y_)
+
+        n_hits = len(hit_x)
 
         return Cluster(
-            time_start=time_start,
-            time_stop=time_stop,
+            t_min=t_min,
+            t_max=t_max,
             x_min=x_min,
             x_max=x_max,
             y_min=y_min,
             y_max=y_max,
             n_hits=n_hits,
-            max_hits=max_hits,
+            hit_x=hit_x_,
+            hit_y=hit_y_,
+            hit_t=hit_t_,
         )
 
     @staticmethod
     def union(clusters):
         n_hits = 0
-        time_start = clusters[0].time_start
-        time_stop  = clusters[0].time_stop
-        x_min      = clusters[0].x_min
-        x_max      = clusters[0].x_max
-        y_min      = clusters[0].y_min
-        y_max      = clusters[0].y_max
-        max_hits   = clusters[0].max_hits
+        t_min = clusters[0].t_min
+        t_max = clusters[0].t_max
+        x_min = clusters[0].x_min
+        x_max = clusters[0].x_max
+        y_min = clusters[0].y_min
+        y_max = clusters[0].y_max
 
         for cluster in clusters:
             def biggest(a, b):
@@ -69,24 +83,22 @@ class Cluster:
                     return None
                 return a if a < b else b
 
-            time_start = smallest(cluster.time_start, time_start)
-            time_stop  = biggest (cluster.time_stop , time_stop )
-            x_min      = smallest(cluster.x_min     , x_min     )
-            x_max      = biggest (cluster.x_max     , x_max     )
-            y_min      = smallest(cluster.y_min     , y_min     )
-            y_max      = biggest (cluster.y_max     , y_max     )
-            max_hits   = biggest (cluster.max_hits  , max_hits  )
+            t_min = smallest(cluster.t_min, t_min)
+            t_max = biggest (cluster.t_max, t_max)
+            x_min = smallest(cluster.x_min, x_min)
+            x_max = biggest (cluster.x_max, x_max)
+            y_min = smallest(cluster.y_min, y_min)
+            y_max = biggest (cluster.y_max, y_max)
             n_hits += cluster.n_hits
 
         return Cluster(
-            time_start = time_start,
-            time_stop = time_stop,
+            t_min = t_min,
+            t_max = t_max,
             x_min = x_min,
             x_max = x_max,
             y_min = y_min,
             y_max = y_max,
             n_hits = n_hits,
-            max_hits = max_hits,
         )
 
 class TimeClusterMaker:

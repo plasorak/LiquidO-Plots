@@ -98,17 +98,26 @@ def add_truth_particle(ax, hit_data, hit_key_x, hit_key_y, truth_data, x_min, x_
     n_hits = len(hit_data)
 
     for id in all_track_ids:
+        # Plot all primary particles
         track_data = local_truth_data[local_truth_data['track_id'] == id]
         if (track_data['parent_id'] == 0).any():
             plotted_track_ids += [id]
             primary += [id]
             continue
 
+        # Plot all the particles that contribute to more than 5% of the hits
         particle_hits = hit_data[hit_data['h_parent_id']==id]
         this_n_hits = particle_hits.shape[0]
-        if this_n_hits>0.05*n_hits and this_n_hits>10:
+        if this_n_hits>0.05*n_hits:
             rprint(f"Track {id} has {this_n_hits} hits, plotting")
             plotted_track_ids += [id]
+            continue
+
+        # Plot all the neutrons
+        if (track_data['i_particle']==2112).any():
+            rprint(f"Track {id} is a neutron, plotting")
+            plotted_track_ids += [id]
+            continue
 
 
 
@@ -206,7 +215,6 @@ def plot(
     y_min,
     y_max,
     with_underlay = True,
-    with_legend = False,
     aspect_ratio = 1,
 ):
     hit_data_present = hit_data.where(hit_data["h_time"]>time_start, inplace=False)# * hit_data["h_time"]<time_end
@@ -247,11 +255,6 @@ def plot(
 
     rprint(f'Before padding {x_min=} {x_max=} {y_min=} {y_max=}')
 
-    # x_min_padded = add_padding(x_min, x_max, 'left',  padding)
-    # x_max_padded = add_padding(x_min, x_max, 'right', padding)
-    # y_min_padded = add_padding(y_min, y_max, 'left',  padding)
-    # y_max_padded = add_padding(y_min, y_max, 'right', padding)
-
     x_min_padded, x_max_padded, y_min_padded, y_max_padded = adjust_for_aspect_ratio(x_min, x_max, y_min, y_max, aspect_ratio)
 
     x_min = x_min_padded
@@ -284,9 +287,6 @@ def plot(
     if label_y is not None:
         ax.set_ylabel(f'{label_y} [mm]')
 
-    if with_legend:
-        ax.legend().set_zorder(20)
-
     ax.set_aspect('equal', adjustable='box')
 
     from mpl_toolkits.axes_grid1.anchored_artists import AnchoredSizeBar
@@ -315,6 +315,8 @@ def plot(
     return x_min, x_max, y_min, y_max
 
 def merge_callback(ctx, param, value):
+    if value == '':
+        return []
     return value.split(',')
 
 @click.command()
@@ -324,8 +326,9 @@ def merge_callback(ctx, param, value):
 @click.option('--view', type=str, default='xz')
 @click.option('--no-reindex', is_flag=True, default=False)
 @click.option('--highest-hit-contributors', type=int, default=None, help='Plot truth data from the number of tracks that contribute to the most number of hits')
-@click.option('--merge-clusters', type=str, default="a", help='a list of list of clusters to merge: format = "abc,def" to merge a, b and c together, and d, e and f together', callback=merge_callback)
-def main(input_data, output, hit_threshold, view, no_reindex, highest_hit_contributors, merge_clusters):
+@click.option('--merge-clusters', type=str, default='', help='a list of list of clusters to merge: format = "abc,def" to merge a, b and c together, and d, e and f together', callback=merge_callback)
+@click.option('--label-cluster', type=str, multiple=True)
+def main(input_data, output, hit_threshold, view, no_reindex, highest_hit_contributors, merge_clusters, label_cluster):
 
     if hit_threshold is None and highest_hit_contributors is None:
         hit_threshold = 1000
@@ -347,59 +350,67 @@ def main(input_data, output, hit_threshold, view, no_reindex, highest_hit_contri
     hit_x_key = "h_pos_z"
     hit_y_key = "h_pos_x" if view == 'xz' else 'h_pos_y'
 
-    hit_x = hit_data[hit_x_key]
-    hit_y = hit_data[hit_y_key]
+    binning_x = np.arange(-7477.5, 7577.5, 30) if view == 'xz' else np.arange(-7477.5+15, 7577.5+15, 30)
+    binning_y = np.arange(-2625,   2625,   15) if view == 'xz' else np.arange(-2640,      2640,      15)
+
+    hit_x = np.array(hit_data[hit_x_key])
+    hit_y = np.array(hit_data[hit_y_key])
+    hit_t = np.array(hit_data['h_time'])
+
+    rprint(f'''{hit_x.shape=}
+{hit_y.shape=}
+{hit_t.shape=}
+''')
+
+    from dbscan import DBScan
+    hit_counts, xedges, yedges = np.histogram2d(hit_x, hit_y, bins=(binning_x, binning_y))
+
+    x_indices = np.where(hit_counts>0)[0]
+    y_indices = np.where(hit_counts>0)[1]
+    clusterable_x = (xedges[x_indices]+xedges[x_indices+1])/2
+    clusterable_y = (yedges[y_indices]+yedges[y_indices+1])/2
+
+    dbscan = DBScan(eps=500, min_hits=5, hit_x=clusterable_x, hit_y=clusterable_y)
+    dbscan.run()
+    space_clusters = dbscan.clusters
+
+    print(f'Number of space clusters before prunning: {len(space_clusters)}')
+    space_clusters = [cluster for cluster in space_clusters if cluster.n_hits>10]
+    print(f'Number of space clusters after prunning: {len(space_clusters)}')
 
     time_binning = np.arange(0.,np.max(hit_data['h_time']), hit_lifetime_ns)
-    time_counts, _ = np.histogram(hit_data['h_time'], bins=time_binning)
-
-    from time_cluster_maker import TimeClusterMaker
-    time_cluster_maker = TimeClusterMaker(time_binning, time_counts, hit_lifetime_ns)
-    time_cluster_maker.run_edge_detector()
-    time_clusters = time_cluster_maker.clusters
-    # Manually make the first cluster include all the hit
-    time_clusters[0].stop = time_clusters[-1].stop
-
-    n_decay_clusters = len(time_clusters) - 1
-    rprint(f'before removing: {n_decay_clusters=}')
-    time_clusters = [cluster for cluster in time_clusters if cluster.n_hits>100]
-    n_decay_clusters = len(time_clusters) - 1
-    rprint(f'after removing: {n_decay_clusters=}')
-
+    alphabet = 'abcdefghijklmnopqrstuvwxyz'
+    overall_index = 0
 
     from time_cluster_maker import Cluster
     clusters = {}
 
+    for i_space, space_cluster in enumerate(space_clusters):
 
-    from dbscan import DBScan
+        x_min, x_max, y_min, y_max = space_cluster.get_min_max()
+        rprint(f"\n\n\nSpace cluster #{i_space} {x_min=} {x_max=} {y_min=} {y_max=} {space_cluster.n_hits=}")
 
-    alphabet = 'abcdefghijklmnopqrstuvwxyz'
-    overall_index = 1
+        hit_t_ = np.array(hit_t[np.where((hit_x>x_min)&(hit_x<x_max)&(hit_y>y_min)&(hit_y<y_max))[0]])
 
-    for i, time_cluster in enumerate(time_clusters):
+        time_counts, _ = np.histogram(hit_t_, bins=time_binning)
 
-        if i == 0:
-            clusters[alphabet[0]] = Cluster.get_from_time_and_space_clusters(time_cluster, None)
-            continue
+        from time_cluster_maker import TimeClusterMaker
+        time_cluster_maker = TimeClusterMaker(time_binning, time_counts, hit_lifetime_ns)
+        time_cluster_maker.run_edge_detector()
+        time_clusters = time_cluster_maker.clusters
 
-        mask_past   = hit_data["h_time"]>time_cluster.start
-        mask_future = hit_data["h_time"]<time_cluster.stop
-        mask = mask_past * mask_future
+        print(f'Number of time clusters before prunning: {len(time_clusters)}')
+        time_clusters = [cluster for cluster in time_clusters if cluster.n_hits>10]
+        print(f'Number of time clusters after prunning: {len(time_clusters)}')
 
-        hit_x_ = np.array(hit_x[mask].values)
-        hit_y_ = np.array(hit_y[mask].values)
-
-        dbscan = DBScan(eps=500, min_hits=5, hit_x=hit_x_, hit_y=hit_y_)
-        dbscan.run()
-        for j, space_cluster in enumerate(dbscan.clusters):
-            clusters[alphabet[overall_index]] = Cluster.get_from_time_and_space_clusters(time_clusters[i], space_cluster)
-            rprint(f"""Time cluster {i} & space cluster {j} created cluster {overall_index}
+        for i_time, time_cluster in enumerate(time_clusters):
+            t_min = time_cluster.start
+            t_max = time_cluster.stop
+            clusters[alphabet[overall_index]] = Cluster.get_from_data(x_min, x_max, y_min, y_max, t_min, t_max, hit_x, hit_y, hit_t)
+            rprint(f"""Time cluster {i_time} & space cluster {i_space} created cluster {overall_index}
 {clusters[alphabet[overall_index]]}
 """)
             overall_index += 1
-
-    n_decay_clusters = len(clusters) - 1
-    rprint(f'after space clustering: {n_decay_clusters=}')
 
     for merge in merge_clusters:
         clusters_to_merge = [cluster for label, cluster in clusters.items() if label in merge]
@@ -438,15 +449,7 @@ def main(input_data, output, hit_threshold, view, no_reindex, highest_hit_contri
         axclus += [ax]
 
 
-    axtime.hist(time_binning[:-1], time_binning, weights=time_counts, log=True, rasterized=True)
-    axtime.set_xlabel('Time [ns]')
-    axtime.set_ylabel('Number of hits')
-    y_max = np.max(time_counts)*10
-    axtime.set_ylim((0.5, y_max))
 
-
-    binning_x = np.arange(-7477.5, 7577.5, 30) if view == 'xz' else np.arange(-7477.5+15, 7577.5+15, 30)
-    binning_y = np.arange(-2625,   2625,   15) if view == 'xz' else np.arange(-2640,      2640,      15)
 
     from rich.table import Table
 
@@ -472,16 +475,40 @@ def main(input_data, output, hit_threshold, view, no_reindex, highest_hit_contri
     time_annotation = {}
 
     clusters = dict(sorted(clusters.items()))
-    if not no_reindex:
-        new_clusters = {}
-        for i, cluster in enumerate(clusters.values()):
-            label = alphabet[i-1] if i>0 else 'all'
-            new_clusters[label] = cluster
+    if not no_reindex: # if reindex
+        time_ordered_cluster = {}
+        start_times = {}
+        for label, cluster in clusters.items():
+            start_times[cluster.t_min] = label
+        start_times = dict(sorted(start_times.items()))
+        print(start_times)
+        for i, label in enumerate(start_times.values()):
+            time_ordered_cluster[alphabet[i]] = clusters[label]
+        clusters = time_ordered_cluster
 
-        clusters = new_clusters
-    else:
-        clusters['all (a)'] = clusters.pop('a')
-        clusters = dict(sorted(clusters.items()))
+
+    axtime.hist(
+        [cluster.hit_t for cluster in clusters.values()],
+        time_binning,
+        log=True,
+        histtype='bar',
+        stacked=True,
+        rasterized=True,
+        label=[f'Cluster {label}' for label in clusters.keys()]
+    )
+
+    time_counts = np.zeros(len(time_binning)-1)
+    for cluster in clusters.values():
+        counts, _ = np.histogram(cluster.hit_t, bins=time_binning)
+        time_counts += counts
+
+    axtime.set_xlabel('Time [ns]')
+    axtime.set_ylabel('Number of hits')
+    y_max = np.max(time_counts)*10
+    axtime.set_ylim((0.5, y_max))
+    axtime.legend()
+
+
 
 
     for label, cluster in clusters.items():
@@ -492,18 +519,10 @@ def main(input_data, output, hit_threshold, view, no_reindex, highest_hit_contri
 
         cluster_table.add_row(
             label,
-            str(cluster.time_start), str(cluster.time_stop),
+            str(cluster.t_min), str(cluster.t_max),
             str(cluster.x_min), str(cluster.x_max),
             str(cluster.y_min), str(cluster.y_max),
             str(cluster.n_hits)
-        )
-
-        padding = 0
-
-        axtime.annotate(
-            label,
-            xy=(cluster.time_start, cluster.n_hits*3),
-            xycoords='data'
         )
 
         ax = axclus[count_total-1] if count_total>0 else axfull
@@ -519,13 +538,12 @@ def main(input_data, output, hit_threshold, view, no_reindex, highest_hit_contri
             truth_data = truth_data,
             label_x = None,
             label_y = None,
-            time_start = cluster.time_start,
-            time_end = cluster.time_stop,
+            time_start = cluster.t_min,
+            time_end = cluster.t_max,
             x_min = cluster.x_min,
             x_max = cluster.x_max,
             y_min = cluster.y_min,
             y_max = cluster.y_max,
-            with_legend = count_total==0,
             with_underlay = count_total>0,
             aspect_ratio = 1,
         )
@@ -534,6 +552,7 @@ def main(input_data, output, hit_threshold, view, no_reindex, highest_hit_contri
         if count_total>0:
             from matplotlib.patches import Rectangle
             regions[label] = Rectangle([x_min, y_min], width=x_max-x_min, height=y_max-y_min)
+
 
         ax.tick_params(bottom=False, labelbottom=False, left=False, labelleft=False)
 
@@ -548,7 +567,104 @@ def main(input_data, output, hit_threshold, view, no_reindex, highest_hit_contri
         rect.set(facecolor='none', edgecolor='black', zorder=8)
         position_annotations = [rect.get_x()+100, rect.get_y()+rect.get_height()-150]
         axfull.annotate(label, position_annotations)
+        x_min = rect.get_x()
+        x_max = rect.get_x()+rect.get_width()
+        y_min = rect.get_y()
+        y_max = rect.get_y()+rect.get_height()
 
+        x_min_full, x_max_full = axfull.get_xlim()
+        y_min_full, y_max_full = axfull.get_ylim()
+        padding_x = []
+        padding_y = []
+        stradling_out_of_bounds = False
+
+        if x_min < x_min_full and x_max > x_min_full:
+            padding_x += ["left"]
+            x_min_full = x_min
+            stradling_out_of_bounds = True
+        if x_max > x_max_full and x_min < x_max_full:
+            padding_x += ["right"]
+            x_max_full = x_max
+            stradling_out_of_bounds = True
+        if y_min < y_min_full and y_max > y_min_full:
+            padding_y += ["left"]
+            y_min_full = y_min
+            stradling_out_of_bounds = True
+        if y_max > y_max_full and y_min < y_max_full:
+            padding_y += ["right"]
+            y_max_full = y_max
+            stradling_out_of_bounds = True
+
+        if stradling_out_of_bounds:
+
+            for px in padding_x:
+                if px == "left":
+                    x_min_full = add_padding(x_min_full, x_max_full, side=px, padding=5.)
+                else:
+                    x_max_full = add_padding(x_min_full, x_max_full, side=px, padding=5.)
+
+            for py in padding_y:
+                if py == "left":
+                    y_min_full = add_padding(y_min_full, y_max_full, side=py, padding=5.)
+                else:
+                    y_max_full = add_padding(y_min_full, y_max_full, side=py, padding=5.)
+
+            x_min_padded, x_max_padded, y_min_padded, y_max_padded = adjust_for_aspect_ratio(
+                x_min_full,
+                x_max_full,
+                y_min_full,
+                y_max_full,
+                1
+            )
+            axfull.set_xlim((x_min_padded, x_max_padded))
+            axfull.set_ylim((y_min_padded, y_max_padded))
+
+    for label, rect in regions.items():
+        x_min = rect.get_x()
+        x_max = rect.get_x()+rect.get_width()
+        y_min = rect.get_y()
+        y_max = rect.get_y()+rect.get_height()
+        x_min_full, x_max_full = axfull.get_xlim()
+        y_min_full, y_max_full = axfull.get_ylim()
+
+        if (x_min < x_min_full and x_max < x_min_full or
+            x_min > x_max_full and x_max > x_max_full or
+            y_min < y_min_full and y_max < y_min_full or
+            y_min > y_max_full and y_max > y_max_full):
+            rprint(f"{x_min=} {x_max=} {y_min=} {y_max=} {x_min_full=} {x_max_full=} {y_min_full=} {y_max_full=}")
+            vector = np.array([
+                (x_max+x_min)/2 - (x_max_full+x_min_full)/2,
+                (y_max+y_min)/2 - (y_max_full+y_min_full)/2,
+            ])
+            center = np.array([
+                (x_max_full+x_min_full)/2,
+                (y_max_full+y_min_full)/2,
+            ])
+            rprint(f'vector: {vector}')
+            unit_vector = vector / np.linalg.norm(vector)
+            half_width = (x_max_full - x_min_full) / 2
+            arrow_position = center + unit_vector * half_width * 0.9
+            arrow_dxdy = unit_vector*half_width*0.08
+
+            axfull.arrow(
+                arrow_position[0], arrow_position[1],
+                arrow_dxdy[0], arrow_dxdy[1],
+                linewidth=2,
+                head_width=50,
+                fc ='black', ec ='black',
+            )
+            distance_vector = np.array([
+                (x_max-x_min)/2 - arrow_position[0],
+                (y_max-y_min)/2 - arrow_position[1],
+            ])
+            how_far = np.linalg.norm(distance_vector)
+            axfull.annotate(
+                f"{label}: {how_far/1000:.1f} m",
+                arrow_position-np.array([half_width*0.05, half_width*0.05]),
+                )
+
+
+    axfull.legend().set_zorder(20)
 
     fig.savefig(output, dpi=400)
     rprint(cluster_table)

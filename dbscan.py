@@ -3,7 +3,7 @@ from rich import print as rprint
 from dataclasses import dataclass
 
 @dataclass
-class SpaceCluster:
+class SpaceCluster: # really that's not a cluster, but whatever
     neighbours:np.ndarray
     n_hits = 0
     hit_x:np.ndarray
@@ -47,9 +47,11 @@ class DBScan:
            (hit_y_i - hit_y_j)**2
         )
 
-    def region_query(self, i):
+    def region_query(self, i, label):
         neighbours = []
-        for j in range(self.n_hits):
+        leftovers = np.where(label == 0)[0]
+
+        for j in leftovers:
             if self.distance(i, j) < self.eps:
                 neighbours += [j]
         return np.array(neighbours)
@@ -60,14 +62,16 @@ class DBScan:
         # 0 -> unseen
         # 1,2,3,4,... -> cluster_id
         cluster_id = 1
-
+        how_often = 100
+        iterator = 0
         for i in range(self.n_hits):
+
             if label[i] != 0:
                 continue
 
             label[i] = 0
 
-            neighbours = self.region_query(i)
+            neighbours = self.region_query(i, label)
             if neighbours.shape[0] < self.min_hits-1:
                 label[i] = -1
                 continue
@@ -77,6 +81,12 @@ class DBScan:
             label[i] = cluster_id
 
             while neighbours.shape[0] > 0:
+                iterator += 1
+
+                if iterator%how_often == 0:
+                    rprint(f"Progress {np.count_nonzero(label)}/{self.n_hits} hits processed, {cluster_id-1} clusters found")
+
+
                 neighbour = neighbours[-1]
                 neighbours = neighbours[:-1]
                 if label[neighbour] == -1:
@@ -89,7 +99,7 @@ class DBScan:
                     continue
 
                 label[neighbour] = cluster_id
-                new_neighbours = self.region_query(neighbour)
+                new_neighbours = self.region_query(neighbour, label)
                 if new_neighbours.shape[0] >= self.min_hits:
                     a = np.concatenate((neighbours, new_neighbours))
                     neighbours = np.unique(a)
@@ -113,6 +123,6 @@ class DBScan:
             cluster = SpaceCluster(
                 neighbours = np.array(indices),
                 hit_x = self.hit_x,
-                hit_y = self.hit_y
+                hit_y = self.hit_y,
             )
             self.clusters.append(cluster)
