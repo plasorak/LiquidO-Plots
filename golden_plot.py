@@ -18,7 +18,7 @@ CB_color_cycle = ['#ff7f00', '#4daf4a',
 
 np.set_printoptions(threshold=sys.maxsize)
 
-
+pd.options.mode.copy_on_write = True
 particle_color = {}
 
 class AnchoredHScaleBar(matplotlib.offsetbox.AnchoredOffsetbox):
@@ -81,14 +81,14 @@ def adjust_for_aspect_ratio(x_min, x_max, y_min, y_max, aspect_ratio):
 def get_norm(x_min, x_max, y_min, y_max):
     return np.sqrt((x_max - x_min)*(x_max - x_min) + (y_max - y_min)*(y_max - y_min))
 
-def add_truth_particle(ax, hit_data, hit_key_x, hit_key_y, truth_data, x_min, x_max, y_min, y_max, time_start, time_end, plot_list, legend_label=None):
+def add_truth_particle(ax, hit_data, hit_key_x, hit_key_y, truth_data, x_min, x_max, y_min, y_max, time_start, time_end, legend_label=None):
 
     global particle_color
 
     truth_key_x = hit_key_x.replace('h_pos_', 'i_pos_')
     truth_key_y = hit_key_y.replace('h_pos_', 'i_pos_')
 
-    all_track_ids = np.unique(local_truth_data['track_id'])
+    all_track_ids = np.unique(truth_data['track_id'])
 
     plotted_track_ids = []
     primary = []
@@ -97,21 +97,24 @@ def add_truth_particle(ax, hit_data, hit_key_x, hit_key_y, truth_data, x_min, x_
 
     for id in all_track_ids:
         track_data = truth_data[truth_data['track_id'] == id]
-        track_data["x"] = track_data[truth_key_x]
-        track_data["y"] = track_data[truth_key_y]
+        xs = track_data.loc[:, truth_key_x]
+        ys = track_data.loc[:, truth_key_y]
+        track_data.loc[:, "x"] = xs
+        track_data.loc[:, "y"] = ys
+
 
         primary = (track_data['parent_id'] == 0).any()
+        #print(primary)
+        #if not id in plot_list:
+        if not primary:
+            continue
 
-        if not id in plot_list:
-            if not primary:
-                continue
-
-        mask = local_truth_data['track_id'] == id
-        this_track = local_truth_data[mask]
+        mask = truth_data['track_id'] == id
+        this_track = truth_data[mask]
         xs = this_track[truth_key_x]
         ys = this_track[truth_key_y]
         pdg = this_track.iloc[0]['i_particle']
-        if id in primary:
+        if primary:
             xs = pd.concat([pd.Series([0]), xs])
             ys = pd.concat([pd.Series([0]), ys])
         p = Particle.from_pdgid(pdg)
@@ -124,7 +127,7 @@ def add_truth_particle(ax, hit_data, hit_key_x, hit_key_y, truth_data, x_min, x_
         rprint(f"{pdg=} {M=} {ke=} {e=} {p.name=}")
 
 
-        primary_str = ' (primary)' if id in primary else ''
+        primary_str = ' (primary)' if primary else ''
         legend_str = f' {legend_label}' if legend_label else ''
         rprint(f"Plotting {pdg}{primary_str}")
 
@@ -148,7 +151,7 @@ def add_truth_particle(ax, hit_data, hit_key_x, hit_key_y, truth_data, x_min, x_
                 color = particle_color[id] if id in particle_color else None,
             )
             particle_color[id] = lines[0].get_c()
-        elif id in primary:
+        elif primary:
             #x_min, x_max, y_min, y_max
 
             xs = xs.array
@@ -183,6 +186,7 @@ def add_truth_particle(ax, hit_data, hit_key_x, hit_key_y, truth_data, x_min, x_
 def plot(
     ax,
     label,
+    title,
     hit_data,
     hit_key_x,
     hit_key_y,
@@ -197,6 +201,7 @@ def plot(
     x_max,
     y_min,
     y_max,
+    plot_axes = False,
     with_underlay = True,
     aspect_ratio = 1,
     legend_label = None
@@ -250,9 +255,9 @@ def plot(
 
     if with_underlay:
         # add_truth_particle(ax, hit_data_past   , hit_key_x, hit_key_y, truth_data, x_min, x_max, y_min, y_max, 0         , time_end, plot_all_above=None)
-        add_truth_particle(ax, hit_data_present, hit_key_x, hit_key_y, truth_data, x_min, x_max, y_min, y_max, time_start, time_end, plot_all_above=0, legend_label=legend_label)
+        add_truth_particle(ax, hit_data_present, hit_key_x, hit_key_y, truth_data, x_min, x_max, y_min, y_max, time_start, time_end, legend_label=legend_label)
     else:
-        add_truth_particle(ax, hit_data_present, hit_key_x, hit_key_y, truth_data, x_min, x_max, y_min, y_max, time_start, time_end, plot_all_above=None)
+        add_truth_particle(ax, hit_data_present, hit_key_x, hit_key_y, truth_data, x_min, x_max, y_min, y_max, time_start, time_end)
 
 
     ax.set_xlim((x_min, x_max))
@@ -261,17 +266,20 @@ def plot(
     if label is not None:
 
         ax.annotate(
-            label,
-            (0.05, 0.95),# if not with_underlay else (0.05, 0.95),
+            f'{label}: {title}' if title is not None else label,
+            (0.05, 0.95), # if not with_underlay else (0.05, 0.95),
             xycoords='axes fraction',
             va='center'
         )
 
-    if label_x is not None:
+    if label_x is not None and plot_axes:
         ax.set_xlabel(f'{label_x} [mm]')
 
-    if label_y is not None:
+    if label_y is not None and plot_axes:
         ax.set_ylabel(f'{label_y} [mm]')
+
+    if not plot_axes:
+        ax.tick_params(bottom=False, labelbottom=False, left=False, labelleft=False)
 
     ax.set_aspect('equal', adjustable='box')
 
@@ -300,41 +308,56 @@ def plot(
 
     return x_min, x_max, y_min, y_max
 
-def merge_callback(ctx, param, value):
-    if value == '':
-        return []
-    return value.split(',')
-
 @click.command()
 @click.argument('input_data', type=click.Path(exists=True))
 @click.argument('output', type=click.Path(exists=False))
-@click.option('--hit-threshold', type=int, default=None, help='Plot truth data from the tracks that have at least this number of hits')
-@click.option('--view', type=str, default='xz')
-@click.option('--no-reindex', is_flag=True, default=False)
-@click.option('--highest-hit-contributors', type=int, default=None, help='Plot truth data from the number of tracks that contribute to the most number of hits')
-@click.option('--merge-clusters', type=str, default='', help='a list of list of clusters to merge: format = "abc,def" to merge a, b and c together, and d, e and f together', callback=merge_callback)
-@click.option('--label-cluster', type=str, multiple=True)
-@click.option('--plot-list', type=str)
-def main(input_data, output, hit_threshold, view, no_reindex, highest_hit_contributors, merge_clusters, label_cluster, plot_list):
+@click.option('--plot-options', type=click.Path(exists=True), default=None)
+def main(input_data, output, plot_options):
 
-    import json
+    run_clustering = False
 
-    if plot_list is not None:
-        plot_list = json.loads(plot_list)
+    if plot_options is not None:
+        import json
+        option_key = input_data.replace('/eos/user/p/plasorak/LiquidO/', '')
+        rprint(f'Using option key: {option_key}')
+        with open(plot_options, 'r') as plot_options_file:
+            plot_options = json.load(plot_options_file)
+        plot_options = plot_options.get(option_key, {})
+        if plot_options != {}:
+            rprint(f'Using plot options: {json.dumps(plot_options, indent=4)}')
+        else:
+            rprint(f'[red bold]No plot options found for {option_key}[/]')
     else:
-        plot_list = {}
+        plot_options = {}
 
-    if hit_threshold is None and highest_hit_contributors is None:
-        hit_threshold = 1000
-
-    hit_lifetime_ns = 5.
+    hit_lifetime_ns   = plot_options.get('hit_lifetime_ns', 5)
+    view              = plot_options.get('view', 'xz')
+    plot_axes         = plot_options.get('plot_axes', False)
+    run_clustering    = plot_options.get('run_clustering', True)
+    merge_cluster     = plot_options.get('merge_cluster', [])
+    cluster_reindex   = plot_options.get('cluster_reindex', True)
+    hit_survival_prob = plot_options.get('hit_survival_prob', 0.5)
+    seed              = plot_options.get('seed', 123456)
+    db_scan_params    = plot_options.get('db_scan_params', {
+            "eps": 400,
+            "min_samples": 5
+        }
+    )
+    cluster_titles = plot_options.get('cluster_titles', {})
 
     hit_data   = uproot.open(input_data)['op_hits'] .arrays(library="pd")
     truth_data = uproot.open(input_data)['mc_truth'].arrays(library="pd")
+
     if   view == 'xz':
         hit_data = hit_data[hit_data['h_is_xz']]
     elif view == 'yz':
         hit_data = hit_data[hit_data['h_is_yz']]
+
+    rng = np.random.default_rng(seed)
+    n_hits_to_drop = rng.binomial(len(hit_data), 1-hit_survival_prob)
+    rprint(f'Dropping {n_hits_to_drop} hits out of {len(hit_data)}, survival probability: {hit_survival_prob*100:0.1f}%, hit that survived: {(1-n_hits_to_drop/len(hit_data))*100:0.1f}%')
+    indices_to_drop = rng.choice(hit_data.index, n_hits_to_drop, replace=False)
+    hit_data = hit_data.drop(indices_to_drop)
 
     rprint('hit_data')
     rprint(hit_data)
@@ -356,66 +379,74 @@ def main(input_data, output, hit_threshold, view, no_reindex, highest_hit_contri
 {hit_t.shape=}
 ''')
 
-    from dbscan import DBScan
-    hit_counts, xedges, yedges = np.histogram2d(hit_x, hit_y, bins=(binning_x, binning_y))
-
-    x_indices = np.where(hit_counts>0)[0]
-    y_indices = np.where(hit_counts>0)[1]
-    clusterable_x = (xedges[x_indices]+xedges[x_indices+1])/2
-    clusterable_y = (yedges[y_indices]+yedges[y_indices+1])/2
-
-    dbscan = DBScan(eps=500, min_hits=5, hit_x=clusterable_x, hit_y=clusterable_y)
-    dbscan.run()
-    space_clusters = dbscan.clusters
-
-    print(f'Number of space clusters before prunning: {len(space_clusters)}')
-    space_clusters = [cluster for cluster in space_clusters if cluster.n_hits>10]
-    print(f'Number of space clusters after prunning: {len(space_clusters)}')
-
-    time_binning = np.arange(0.,np.max(hit_data['h_time']), hit_lifetime_ns)
     alphabet = 'abcdefghijklmnopqrstuvwxyz'
-    overall_index = 0
+    time_binning = np.arange(0.,np.max(hit_data['h_time']), hit_lifetime_ns)
 
-    from time_cluster_maker import Cluster
-    clusters = {}
+    if run_clustering:
+        from dbscan import DBScan
+        hit_counts, xedges, yedges = np.histogram2d(hit_x, hit_y, bins=(binning_x, binning_y))
 
-    for i_space, space_cluster in enumerate(space_clusters):
+        x_indices = np.where(hit_counts>0)[0]
+        y_indices = np.where(hit_counts>0)[1]
+        clusterable_x = (xedges[x_indices]+xedges[x_indices+1])/2
+        clusterable_y = (yedges[y_indices]+yedges[y_indices+1])/2
 
-        x_min, x_max, y_min, y_max = space_cluster.get_min_max()
-        rprint(f"\n\n\nSpace cluster #{i_space} {x_min=} {x_max=} {y_min=} {y_max=} {space_cluster.n_hits=}")
+        dbscan = DBScan(eps=500, min_hits=5, hit_x=clusterable_x, hit_y=clusterable_y)
+        dbscan.run()
+        space_clusters = dbscan.clusters
 
-        hit_t_ = np.array(hit_t[np.where((hit_x>x_min)&(hit_x<x_max)&(hit_y>y_min)&(hit_y<y_max))[0]])
+        print(f'Number of space clusters before prunning: {len(space_clusters)}')
+        space_clusters = [cluster for cluster in space_clusters if cluster.n_hits>10]
+        print(f'Number of space clusters after prunning: {len(space_clusters)}')
 
-        time_counts, _ = np.histogram(hit_t_, bins=time_binning)
+        overall_index = 0
 
-        from time_cluster_maker import TimeClusterMaker
-        time_cluster_maker = TimeClusterMaker(time_binning, time_counts, hit_lifetime_ns)
-        time_cluster_maker.run_edge_detector()
-        time_clusters = time_cluster_maker.clusters
+        from time_cluster_maker import Cluster
+        clusters = {}
 
-        print(f'Number of time clusters before prunning: {len(time_clusters)}')
-        time_clusters = [cluster for cluster in time_clusters if cluster.n_hits>10]
-        print(f'Number of time clusters after prunning: {len(time_clusters)}')
+        for i_space, space_cluster in enumerate(space_clusters):
 
-        for i_time, time_cluster in enumerate(time_clusters):
-            t_min = time_cluster.start
-            t_max = time_cluster.stop
-            clusters[alphabet[overall_index]] = Cluster.get_from_data(x_min, x_max, y_min, y_max, t_min, t_max, hit_x, hit_y, hit_t)
-            rprint(f"""Time cluster {i_time} & space cluster {i_space} created cluster {overall_index}
-{clusters[alphabet[overall_index]]}
-""")
-            overall_index += 1
+            x_min, x_max, y_min, y_max = space_cluster.get_min_max()
+            rprint(f"\n\n\nSpace cluster #{i_space} {x_min=} {x_max=} {y_min=} {y_max=} {space_cluster.n_hits=}")
 
-    for merge in merge_clusters:
-        clusters_to_merge = [cluster for label, cluster in clusters.items() if label in merge]
-        new_label = merge[0]
-        new_cluster = Cluster.union(clusters_to_merge)
-        for label in merge:
-            del clusters[label]
-        clusters[new_label] = new_cluster
+            hit_t_ = np.array(hit_t[np.where((hit_x>x_min)&(hit_x<x_max)&(hit_y>y_min)&(hit_y<y_max))[0]])
 
-    n_decay_clusters = len(clusters) - 1
-    rprint(f'after merging clustering: {n_decay_clusters=}')
+            time_counts, _ = np.histogram(hit_t_, bins=time_binning)
+
+            from time_cluster_maker import TimeClusterMaker
+            time_cluster_maker = TimeClusterMaker(time_binning, time_counts, hit_lifetime_ns)
+            time_cluster_maker.run_edge_detector()
+            time_clusters = time_cluster_maker.clusters
+
+            print(f'Number of time clusters before prunning: {len(time_clusters)}')
+            time_clusters = [cluster for cluster in time_clusters if cluster.n_hits>10]
+            print(f'Number of time clusters after prunning: {len(time_clusters)}')
+
+            for i_time, time_cluster in enumerate(time_clusters):
+                t_min = time_cluster.start
+                t_max = time_cluster.stop
+                clusters[alphabet[overall_index]] = Cluster.get_from_data(x_min, x_max, y_min, y_max, t_min, t_max, hit_x, hit_y, hit_t)
+                rprint(f"""Time cluster {i_time} & space cluster {i_space} created cluster {overall_index}
+    {clusters[alphabet[overall_index]]}
+    """)
+                overall_index += 1
+
+        for merge in merge_cluster:
+            clusters_to_merge = [cluster for label, cluster in clusters.items() if label in merge]
+            new_label = merge[0]
+            new_cluster = Cluster.union(clusters_to_merge)
+            for label in merge:
+                del clusters[label]
+            clusters[new_label] = new_cluster
+
+        n_decay_clusters = len(clusters) - 1
+        rprint(f'after merging clustering: {n_decay_clusters=}')
+
+    else:
+        from time_cluster_maker import Cluster
+        clusters = {
+            "a": Cluster.get_from_data(-5000, 5000, -5000, 5000, 0, 1000, hit_x, hit_y, hit_t),
+        }
 
     fig = plt.figure(figsize=(10,8))
 
@@ -469,7 +500,7 @@ def main(input_data, output, hit_threshold, view, no_reindex, highest_hit_contri
     time_annotation = {}
 
     clusters = dict(sorted(clusters.items()))
-    if not no_reindex: # if reindex
+    if cluster_reindex:
         time_ordered_cluster = {}
         start_times = [cluster.t_min for cluster in clusters.values()]
         labels = list(clusters.keys())
@@ -492,7 +523,7 @@ def main(input_data, output, hit_threshold, view, no_reindex, highest_hit_contri
         stacked=True,
         rasterized=True,
         label=[f'Cluster {label}' for label in hit_sorted_labels],
-        color=CB_color_cycle[:len(hit_sorted_labels)]
+        #color=CB_color_cycle[:len(hit_sorted_labels)]
     )
 
     time_counts = np.zeros(len(time_binning)-1)
@@ -525,10 +556,12 @@ def main(input_data, output, hit_threshold, view, no_reindex, highest_hit_contri
         )
 
         ax = axclus[count_total-1] if count_total>0 else axfull
-
+        print(f"label = {label}")
+        print(f"title = {cluster_titles.get(label, None)}")
         x_min, x_max, y_min, y_max = plot(
             ax = ax,
             label = label,
+            title = cluster_titles.get(label, None),
             hit_data = hit_data,
             hit_key_x = hit_x_key,
             hit_key_y = hit_y_key,
@@ -545,7 +578,8 @@ def main(input_data, output, hit_threshold, view, no_reindex, highest_hit_contri
             y_max = cluster.y_max,
             with_underlay = count_total>0,
             aspect_ratio = 1,
-            plot_list = plot_list.get(label, None),
+            plot_axes = plot_axes,
+            #plot_list = plot_list.get(label, None),
             legend_label = f"({label})" if count_total>0 else None,
         )
 
@@ -553,9 +587,6 @@ def main(input_data, output, hit_threshold, view, no_reindex, highest_hit_contri
         if count_total>0:
             from matplotlib.patches import Rectangle
             regions[label] = Rectangle([x_min, y_min], width=x_max-x_min, height=y_max-y_min)
-
-
-        ax.tick_params(bottom=False, labelbottom=False, left=False, labelleft=False)
 
         count1 += 1
         count_total += 1

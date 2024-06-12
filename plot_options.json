@@ -1,0 +1,21 @@
+{
+    "g4_0610/r0/event_0060.mac_data.root":{
+        "view": "yz",
+        "plot_axes": true,
+        "hit_lifetime_ns": 5,
+        "run_clustering": true,
+        "merge_cluster": [],
+        "db_scan_params": {
+            "eps": 40,
+            "min_samples": 5
+        },
+        "cluster_reindex": true,
+        "hit_survival_prob": 0.5,
+        "cluster_titles": {
+            "a": "Prompt energy deposition",
+            "b": "Photon?",
+            "c": "Pion decay",
+            "d": "Neutron capture"
+        }
+    }
+}
