@@ -16,6 +16,12 @@
             "b": "Photon?",
             "c": "Pion decay",
             "d": "Neutron capture"
+        },
+        "plot_particle_ids":{
+            "a": [3, 409144, 429033, 455155, 481149]
+        },
+        "plot_primaries": {
+            "a": true
         }
     }
 }

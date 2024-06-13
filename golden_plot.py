@@ -81,7 +81,18 @@ def adjust_for_aspect_ratio(x_min, x_max, y_min, y_max, aspect_ratio):
 def get_norm(x_min, x_max, y_min, y_max):
     return np.sqrt((x_max - x_min)*(x_max - x_min) + (y_max - y_min)*(y_max - y_min))
 
-def add_truth_particle(ax, hit_data, hit_key_x, hit_key_y, truth_data, x_min, x_max, y_min, y_max, time_start, time_end, legend_label=None):
+def add_truth_particle(
+    ax,
+    hit_data,
+    hit_key_x, hit_key_y,
+    truth_data,
+    x_min, x_max,
+    y_min, y_max,
+    time_start, time_end,
+    legend_label=None,
+    plot_primaries=True,
+    plot_particle_ids=[],
+    ):
 
     global particle_color
 
@@ -104,13 +115,18 @@ def add_truth_particle(ax, hit_data, hit_key_x, hit_key_y, truth_data, x_min, x_
 
 
         primary = (track_data['parent_id'] == 0).any()
-        #print(primary)
-        #if not id in plot_list:
-        if not primary:
+
+        keep = primary and plot_primaries
+
+        if plot_particle_ids != []:
+            keep = keep or (id in plot_particle_ids)
+
+        if not keep:
             continue
 
         mask = truth_data['track_id'] == id
         this_track = truth_data[mask]
+        this_track.sort_values('i_time', inplace=True)
         xs = this_track[truth_key_x]
         ys = this_track[truth_key_y]
         pdg = this_track.iloc[0]['i_particle']
@@ -142,7 +158,7 @@ def add_truth_particle(ax, hit_data, hit_key_x, hit_key_y, truth_data, x_min, x_
 
             if id in particle_color:
                 label = None
-
+            #print(f'plotting {label}: {xs=} {ys=}')
             lines = ax.plot(
                 xs,
                 ys,
@@ -151,9 +167,9 @@ def add_truth_particle(ax, hit_data, hit_key_x, hit_key_y, truth_data, x_min, x_
                 color = particle_color[id] if id in particle_color else None,
             )
             particle_color[id] = lines[0].get_c()
-        elif primary:
+        else:
             #x_min, x_max, y_min, y_max
-
+            continue
             xs = xs.array
             ys = ys.array
             x0 = xs[0]
@@ -204,7 +220,9 @@ def plot(
     plot_axes = False,
     with_underlay = True,
     aspect_ratio = 1,
-    legend_label = None
+    legend_label = None,
+    plot_primaries = True,
+    plot_particle_ids = [],
 ):
     hit_data_present = hit_data.where(hit_data["h_time"]>time_start, inplace=False)# * hit_data["h_time"]<time_end
     hit_data_present = hit_data_present.where(hit_data_present["h_time"]<time_end, inplace=False)# * hit_data["h_time"]<time_end
@@ -255,9 +273,30 @@ def plot(
 
     if with_underlay:
         # add_truth_particle(ax, hit_data_past   , hit_key_x, hit_key_y, truth_data, x_min, x_max, y_min, y_max, 0         , time_end, plot_all_above=None)
-        add_truth_particle(ax, hit_data_present, hit_key_x, hit_key_y, truth_data, x_min, x_max, y_min, y_max, time_start, time_end, legend_label=legend_label)
+        add_truth_particle(
+            ax,
+            hit_data_present,
+            hit_key_x, hit_key_y,
+            truth_data,
+            x_min, x_max,
+            y_min, y_max,
+            time_start, time_end,
+            legend_label=legend_label,
+            plot_primaries=plot_primaries,
+            plot_particle_ids=plot_particle_ids,
+        )
     else:
-        add_truth_particle(ax, hit_data_present, hit_key_x, hit_key_y, truth_data, x_min, x_max, y_min, y_max, time_start, time_end)
+        add_truth_particle(
+            ax,
+            hit_data_present,
+            hit_key_x, hit_key_y,
+            truth_data,
+            x_min, x_max,
+            y_min, y_max,
+            time_start, time_end,
+            plot_primaries=plot_primaries,
+            plot_particle_ids=plot_particle_ids,
+        )
 
 
     ax.set_xlim((x_min, x_max))
@@ -343,7 +382,9 @@ def main(input_data, output, plot_options):
             "min_samples": 5
         }
     )
-    cluster_titles = plot_options.get('cluster_titles', {})
+    cluster_titles    = plot_options.get('cluster_titles', {})
+    plot_particle_ids = plot_options.get('plot_particle_ids', {})
+    plot_primaries    = plot_options.get('plot_primaries', {})
 
     hit_data   = uproot.open(input_data)['op_hits'] .arrays(library="pd")
     truth_data = uproot.open(input_data)['mc_truth'].arrays(library="pd")
@@ -579,6 +620,8 @@ def main(input_data, output, plot_options):
             with_underlay = count_total>0,
             aspect_ratio = 1,
             plot_axes = plot_axes,
+            plot_primaries = plot_primaries.get(label, False),
+            plot_particle_ids = plot_particle_ids.get(label, []),
             #plot_list = plot_list.get(label, None),
             legend_label = f"({label})" if count_total>0 else None,
         )
