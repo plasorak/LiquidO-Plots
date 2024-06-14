@@ -16,7 +16,7 @@ CB_color_cycle = ['#ff7f00', '#4daf4a',
                   '#f781bf', '#a65628', '#984ea3', '#377eb8',
                   '#999999', '#e41a1c', '#dede00']
 
-np.set_printoptions(threshold=sys.maxsize)
+#np.set_printoptions(threshold=sys.maxsize)
 
 pd.options.mode.copy_on_write = True
 particle_color = {}
@@ -110,8 +110,7 @@ def add_truth_particle(
         track_data = truth_data[truth_data['track_id'] == id]
         xs = track_data.loc[:, truth_key_x]
         ys = track_data.loc[:, truth_key_y]
-        track_data.loc[:, "x"] = xs
-        track_data.loc[:, "y"] = ys
+
 
 
         primary = (track_data['parent_id'] == 0).any()
@@ -127,8 +126,7 @@ def add_truth_particle(
         mask = truth_data['track_id'] == id
         this_track = truth_data[mask]
         this_track.sort_values('i_time', inplace=True)
-        xs = this_track[truth_key_x]
-        ys = this_track[truth_key_y]
+
         pdg = this_track.iloc[0]['i_particle']
         if primary:
             xs = pd.concat([pd.Series([0]), xs])
@@ -153,49 +151,49 @@ def add_truth_particle(
         )
         diag = get_norm(x_min, x_max, y_min, y_max)
 
-        if norm > 0.01*diag:
-            label = f'${p.latex_name}$ KE {ke:.1f} MeV{primary_str}{legend_str}' if p is not None else f'{pdg} E {e} MeV'
+        #if norm > 0.01*diag:
+        label = f'${p.latex_name}$ KE {ke:.1f} MeV{primary_str}{legend_str}' if p is not None else f'{pdg} E {e} MeV'
 
-            if id in particle_color:
-                label = None
-            #print(f'plotting {label}: {xs=} {ys=}')
-            lines = ax.plot(
-                xs,
-                ys,
-                linewidth=2,
-                label = label,
-                color = particle_color[id] if id in particle_color else None,
-            )
-            particle_color[id] = lines[0].get_c()
-        else:
-            #x_min, x_max, y_min, y_max
-            continue
-            xs = xs.array
-            ys = ys.array
-            x0 = xs[0]
-            y0 = ys[0]
-            dx = (xs[1]-xs[0])
-            dy = (ys[1]-ys[0])
-            norm = get_norm(
-                xs[0], xs[1],
-                ys[0], ys[1]
-            )
+        if id in particle_color:
+            label = None
+        #print(f'plotting {label}: {xs=} {ys=}')
+        lines = ax.plot(
+            xs,
+            ys,
+            linewidth=2,
+            label = label,
+            color = particle_color[id] if id in particle_color else None,
+        )
+        particle_color[id] = lines[0].get_c()
+        # else:
+        #     #x_min, x_max, y_min, y_max
+        #     continue
+        #     xs = xs.array
+        #     ys = ys.array
+        #     x0 = xs[0]
+        #     y0 = ys[0]
+        #     dx = (xs[1]-xs[0])
+        #     dy = (ys[1]-ys[0])
+        #     norm = get_norm(
+        #         xs[0], xs[1],
+        #         ys[0], ys[1]
+        #     )
 
-            new_norm = 0.05 * diag
-            factor = new_norm / norm
-            new_dx = dx * factor
-            new_dy = dy * factor
+        #     new_norm = 0.05 * diag
+        #     factor = new_norm / norm
+        #     new_dx = dx * factor
+        #     new_dy = dy * factor
 
-            lines = ax.arrow(
-                x0,y0,
-                new_dx, new_dy,
-                linewidth=2,
-                head_width=50,
-                fc ='black', ec ='black',
-                label = f'${p.latex_name}$ KE {ke:.1f} MeV{primary_str}',
-                #color = particle_color[id] if id in particle_color else None,
-            )
-            #particle_color[id] = lines.get_color()
+        #     lines = ax.arrow(
+        #         x0,y0,
+        #         new_dx, new_dy,
+        #         linewidth=2,
+        #         head_width=50,
+        #         fc ='black', ec ='black',
+        #         label = f'${p.latex_name}$ KE {ke:.1f} MeV{primary_str}',
+        #         #color = particle_color[id] if id in particle_color else None,
+        #     )
+        #     #particle_color[id] = lines.get_color()
 
 
 
@@ -306,8 +304,9 @@ def plot(
 
         ax.annotate(
             f'{label}: {title}' if title is not None else label,
-            (0.05, 0.95), # if not with_underlay else (0.05, 0.95),
+            (0.025, 0.975) if label == "a" else (0.05, 0.95),
             xycoords='axes fraction',
+            backgroundcolor=('white', 0.3),
             va='center'
         )
 
@@ -398,7 +397,7 @@ def main(input_data, output, plot_options):
     n_hits_to_drop = rng.binomial(len(hit_data), 1-hit_survival_prob)
     rprint(f'Dropping {n_hits_to_drop} hits out of {len(hit_data)}, survival probability: {hit_survival_prob*100:0.1f}%, hit that survived: {(1-n_hits_to_drop/len(hit_data))*100:0.1f}%')
     indices_to_drop = rng.choice(hit_data.index, n_hits_to_drop, replace=False)
-    hit_data = hit_data.drop(indices_to_drop)
+    hit_data.drop(indices_to_drop, inplace=True)
 
     rprint('hit_data')
     rprint(hit_data)
@@ -432,7 +431,12 @@ def main(input_data, output, plot_options):
         clusterable_x = (xedges[x_indices]+xedges[x_indices+1])/2
         clusterable_y = (yedges[y_indices]+yedges[y_indices+1])/2
 
-        dbscan = DBScan(eps=500, min_hits=5, hit_x=clusterable_x, hit_y=clusterable_y)
+        dbscan = DBScan(
+            eps=db_scan_params['eps'],
+            min_hits=db_scan_params['min_samples'],
+            hit_x=clusterable_x,
+            hit_y=clusterable_y
+        )
         dbscan.run()
         space_clusters = dbscan.clusters
 
@@ -459,6 +463,7 @@ def main(input_data, output, plot_options):
             time_cluster_maker.run_edge_detector()
             time_clusters = time_cluster_maker.clusters
 
+
             print(f'Number of time clusters before prunning: {len(time_clusters)}')
             time_clusters = [cluster for cluster in time_clusters if cluster.n_hits>10]
             print(f'Number of time clusters after prunning: {len(time_clusters)}')
@@ -467,6 +472,38 @@ def main(input_data, output, plot_options):
                 t_min = time_cluster.start
                 t_max = time_cluster.stop
                 clusters[alphabet[overall_index]] = Cluster.get_from_data(x_min, x_max, y_min, y_max, t_min, t_max, hit_x, hit_y, hit_t)
+
+                def space_reduce(cluster, eps, min_hits):
+                    from dbscan import DBScan
+                    hit_counts, xedges, yedges = np.histogram2d(cluster.hit_x, cluster.hit_y, bins=(binning_x, binning_y))
+
+                    x_indices = np.where(hit_counts>0)[0]
+                    y_indices = np.where(hit_counts>0)[1]
+                    clusterable_x = (xedges[x_indices]+xedges[x_indices+1])/2
+                    clusterable_y = (yedges[y_indices]+yedges[y_indices+1])/2
+
+                    dbscan = DBScan(
+                        eps,
+                        min_hits,
+                        clusterable_x,
+                        clusterable_y,
+                    )
+                    dbscan.run()
+                    clusters = dbscan.clusters
+                    max_cluster = max(clusters, key=lambda c: c.n_hits)
+                    print(f'{cluster.x_min=}, {cluster.x_max=}, {cluster.y_min=}, {cluster.y_max=}, {cluster.n_hits=}')
+                    cluster.x_min, cluster.x_max, cluster.y_min, cluster.y_max = max_cluster.get_min_max()
+                    cluster.n_hits = max_cluster.n_hits
+                    print(f'{cluster.x_min=}, {cluster.x_max=}, {cluster.y_min=}, {cluster.y_max=}, {cluster.n_hits=}')
+
+                space_reduce(
+                    clusters[alphabet[overall_index]],
+                    eps=db_scan_params['eps'],
+                    min_hits=db_scan_params['min_samples']
+                )
+
+
+
                 rprint(f"""Time cluster {i_time} & space cluster {i_space} created cluster {overall_index}
     {clusters[alphabet[overall_index]]}
     """)
@@ -489,6 +526,7 @@ def main(input_data, output, plot_options):
             "a": Cluster.get_from_data(-5000, 5000, -5000, 5000, 0, 1000, hit_x, hit_y, hit_t),
         }
 
+
     fig = plt.figure(figsize=(10,8))
 
     n_decay_clusters = len(clusters) - 1
@@ -497,7 +535,11 @@ def main(input_data, output, plot_options):
     ncols_clusters = int(np.ceil(n_decay_clusters/(nrows-1)))
     ncols = 3+ncols_clusters
     empty_rows = n_decay_clusters%(nrows-1)
-    print(f'{nrows=} {ncols=} {empty_rows=}')
+    rprint(f'{nrows=} {ncols=} {empty_rows=}')
+
+    for cluster in clusters.values():
+        rprint(cluster)
+    #exit(0)
 
     gs = GridSpec(nrows=nrows, ncols=ncols, figure=fig, hspace=0.05, wspace=0.05)
     gs.update(left=0.07, right=0.99, bottom=0.07, top=0.99)
