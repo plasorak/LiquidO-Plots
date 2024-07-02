@@ -14,14 +14,14 @@
         "cluster_titles": {
             "a": "Prompt energy deposition",
             "b": "Neutron capture",
-            "c": "Neutron capture",
+            "c": "Photon Compton",
             "d": "Pion decay"
         },
         "plot_particle_ids":{
             "a": [3, 409144, 429033, 455155, 481149, 5, 50186, 50955, 52060, 52250],
             "b": [3, 409144, 429033, 455155, 481149],
-            "c": [5, 50186, 50955, 52060, 52250],
-            "d": [7, 16151, 16568]
+            "c": [2217451, 2220209],
+            "d": [5, 293549, 299719, 351573, 351574]
         },
         "plot_primaries": {
             "a": true

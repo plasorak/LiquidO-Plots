@@ -74,7 +74,7 @@ def adjust_for_aspect_ratio(x_min, x_max, y_min, y_max, aspect_ratio):
         x_min = x_center - x_range / 2
         x_max = x_center + x_range / 2
     new_aspect_ratio = (x_max - x_min) / (y_max - y_min)
-    print(f'Aspect ratio: {current_aspect_ratio} -> {new_aspect_ratio}')
+    #print(f'Aspect ratio: {current_aspect_ratio} -> {new_aspect_ratio}')
     return x_min, x_max, y_min, y_max
 
 
@@ -83,7 +83,6 @@ def get_norm(x_min, x_max, y_min, y_max):
 
 def add_truth_particle(
     ax,
-    hit_data,
     hit_key_x, hit_key_y,
     truth_data,
     x_min, x_max,
@@ -104,97 +103,48 @@ def add_truth_particle(
     plotted_track_ids = []
     primary = []
 
-    n_hits = len(hit_data)
-
-    for id in all_track_ids:
-        track_data = truth_data[truth_data['track_id'] == id]
+    for tid in all_track_ids:
+        track_data = truth_data[truth_data['track_id'] == tid]
+        track_data.sort_values('i_time', inplace=True)
         xs = track_data.loc[:, truth_key_x]
         ys = track_data.loc[:, truth_key_y]
 
-
-
         primary = (track_data['parent_id'] == 0).any()
 
-        keep = primary and plot_primaries
-
-        if plot_particle_ids != []:
-            keep = keep or (id in plot_particle_ids)
+        keep = (primary and plot_primaries) or (tid in plot_particle_ids)
 
         if not keep:
             continue
 
-        mask = truth_data['track_id'] == id
-        this_track = truth_data[mask]
-        this_track.sort_values('i_time', inplace=True)
-
-        pdg = this_track.iloc[0]['i_particle']
+        pdg = track_data.iloc[0]['i_particle']
         if primary:
             xs = pd.concat([pd.Series([0]), xs])
             ys = pd.concat([pd.Series([0]), ys])
         p = Particle.from_pdgid(pdg)
-        e = np.max(this_track['i_E'])
+        e = np.max(track_data['i_E'])
         M = p.mass
         if M is None and abs(pdg) in [12, 14, 16]:
             M = 0
 
         ke = e - M
-        rprint(f"{pdg=} {M=} {ke=} {e=} {p.name=}")
-
 
         primary_str = ' (primary)' if primary else ''
         legend_str = f' {legend_label}' if legend_label else ''
-        rprint(f"Plotting {pdg}{primary_str}")
+        rprint(f"Plotting {tid}: {pdg=} {M=} {ke=} {e=} {p.name=} {primary_str}")
 
-        norm = get_norm(
-            np.min(xs), np.max(xs),
-            np.min(ys), np.max(ys),
-        )
-        diag = get_norm(x_min, x_max, y_min, y_max)
-
-        #if norm > 0.01*diag:
         label = f'${p.latex_name}$ KE {ke:.1f} MeV{primary_str}{legend_str}' if p is not None else f'{pdg} E {e} MeV'
 
-        if id in particle_color:
+        if tid in particle_color:
             label = None
-        #print(f'plotting {label}: {xs=} {ys=}')
+
         lines = ax.plot(
             xs,
             ys,
             linewidth=2,
             label = label,
-            color = particle_color[id] if id in particle_color else None,
+            color = particle_color[tid] if tid in particle_color else None,
         )
-        particle_color[id] = lines[0].get_c()
-        # else:
-        #     #x_min, x_max, y_min, y_max
-        #     continue
-        #     xs = xs.array
-        #     ys = ys.array
-        #     x0 = xs[0]
-        #     y0 = ys[0]
-        #     dx = (xs[1]-xs[0])
-        #     dy = (ys[1]-ys[0])
-        #     norm = get_norm(
-        #         xs[0], xs[1],
-        #         ys[0], ys[1]
-        #     )
-
-        #     new_norm = 0.05 * diag
-        #     factor = new_norm / norm
-        #     new_dx = dx * factor
-        #     new_dy = dy * factor
-
-        #     lines = ax.arrow(
-        #         x0,y0,
-        #         new_dx, new_dy,
-        #         linewidth=2,
-        #         head_width=50,
-        #         fc ='black', ec ='black',
-        #         label = f'${p.latex_name}$ KE {ke:.1f} MeV{primary_str}',
-        #         #color = particle_color[id] if id in particle_color else None,
-        #     )
-        #     #particle_color[id] = lines.get_color()
-
+        particle_color[tid] = lines[0].get_c()
 
 
 def plot(
@@ -222,6 +172,7 @@ def plot(
     plot_primaries = True,
     plot_particle_ids = [],
 ):
+    rprint(f"Plotting {label} {title}, {plot_primaries=}, {plot_particle_ids=}")
     hit_data_present = hit_data.where(hit_data["h_time"]>time_start, inplace=False)# * hit_data["h_time"]<time_end
     hit_data_present = hit_data_present.where(hit_data_present["h_time"]<time_end, inplace=False)# * hit_data["h_time"]<time_end
 
@@ -258,8 +209,6 @@ def plot(
     y_min = np.min(hit_data_present[hit_key_y]) if y_min is None else y_min
     y_max = np.max(hit_data_present[hit_key_y]) if y_max is None else y_max
 
-    rprint(f'Before padding {x_min=} {x_max=} {y_min=} {y_max=}')
-
     x_min_padded, x_max_padded, y_min_padded, y_max_padded = adjust_for_aspect_ratio(x_min, x_max, y_min, y_max, aspect_ratio)
 
     x_min = x_min_padded
@@ -267,35 +216,17 @@ def plot(
     y_min = y_min_padded
     y_max = y_max_padded
 
-    rprint(f'After padding {x_min=} {x_max=} {y_min=} {y_max=}')
-
-    if with_underlay:
-        # add_truth_particle(ax, hit_data_past   , hit_key_x, hit_key_y, truth_data, x_min, x_max, y_min, y_max, 0         , time_end, plot_all_above=None)
-        add_truth_particle(
-            ax,
-            hit_data_present,
-            hit_key_x, hit_key_y,
-            truth_data,
-            x_min, x_max,
-            y_min, y_max,
-            time_start, time_end,
-            legend_label=legend_label,
-            plot_primaries=plot_primaries,
-            plot_particle_ids=plot_particle_ids,
-        )
-    else:
-        add_truth_particle(
-            ax,
-            hit_data_present,
-            hit_key_x, hit_key_y,
-            truth_data,
-            x_min, x_max,
-            y_min, y_max,
-            time_start, time_end,
-            plot_primaries=plot_primaries,
-            plot_particle_ids=plot_particle_ids,
-        )
-
+    add_truth_particle(
+        ax,
+        hit_key_x, hit_key_y,
+        truth_data,
+        x_min, x_max,
+        y_min, y_max,
+        time_start, time_end,
+        legend_label=legend_label,
+        plot_primaries=plot_primaries,
+        plot_particle_ids=plot_particle_ids,
+    )
 
     ax.set_xlim((x_min, x_max))
     ax.set_ylim((y_min, y_max))
@@ -304,9 +235,9 @@ def plot(
 
         ax.annotate(
             f'{label}: {title}' if title is not None else label,
-            (0.025, 0.975) if label == "a" else (0.05, 0.95),
+            (0.01, 0.99) if label == "a" else (0.05, 0.95),
             xycoords='axes fraction',
-            backgroundcolor=('white', 0.3),
+            backgroundcolor=('white', 0.8),
             va='center'
         )
 
@@ -639,8 +570,8 @@ def main(input_data, output, plot_options):
         )
 
         ax = axclus[count_total-1] if count_total>0 else axfull
-        print(f"label = {label}")
-        print(f"title = {cluster_titles.get(label, None)}")
+        # print(f"label = {label}")
+        # print(f"title = {cluster_titles.get(label, None)}")
         x_min, x_max, y_min, y_max = plot(
             ax = ax,
             label = label,
@@ -786,7 +717,7 @@ def main(input_data, output, plot_options):
         handles_insert, labels_insert = ax.get_legend_handles_labels()
         handles += handles_insert
         labels += labels_insert
-    axfull.legend(handles, labels).set_zorder(20)
+    axfull.legend(handles, labels,ncol=2).set_zorder(20)
 
     fig.savefig(output, dpi=400)
     rprint(cluster_table)
