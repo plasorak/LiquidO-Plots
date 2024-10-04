@@ -1,7 +1,7 @@
 {
     "g4_0610/r0/event_0060.mac_data.root":{
         "view": "yz",
-        "plot_axes": true,
+        "plot_axes": false,
         "hit_lifetime_ns": 5,
         "run_clustering": true,
         "merge_cluster": [],
@@ -12,19 +12,172 @@
         "cluster_reindex": true,
         "hit_survival_prob": 0.5,
         "cluster_titles": {
-            "a": "Prompt energy deposition",
+            "a": "Prompt",
             "b": "Neutron capture",
             "c": "Photon Compton",
-            "d": "Pion decay"
+            "d": "$ (\\pi^{+} \\rightarrow) \\mu^{+} \\rightarrow e^{+} $"
+        },
+        "legend_position": "lower right",
+        "energy_cutoff": 0.1,
+        "merge_particle_ids": {
+            "3": [3, 409144, 429033, 455155]
         },
         "plot_particle_ids":{
-            "a": [3, 409144, 429033, 455155, 481149, 5, 50186, 50955, 52060, 52250],
-            "b": [3, 409144, 429033, 455155, 481149],
+            "a": [3, 481149, 5, 50186, 50955, 52060, 52250],
+            "b": [3, 481149],
             "c": [2217451, 2220209],
             "d": [5, 293549, 299719, 351573, 351574]
         },
         "plot_primaries": {
             "a": true
         }
+    },
+    "g4_0610/r1/event_0099.mac_data.root":{
+        "view": "yz",
+        "plot_axes": false,
+        "hit_lifetime_ns": 5,
+        "run_clustering": true,
+        "merge_cluster": [
+            ["a", "b", "f"]
+        ],
+        "db_scan_params": {
+            "eps": 300,
+            "min_samples": 5
+        },
+        "cluster_reindex": true,
+        "hit_survival_prob": 0.5,
+        "cluster_titles": {
+            "a": "Prompt",
+            "b": "Neutron inelastic",
+            "c": "Neutron capture",
+            "d": "$ (\\pi^{+} \\rightarrow) \\mu^{+} \\rightarrow e^{+} $",
+            "e": "$ \\mu^{-} \\rightarrow e^{-} $",
+            "f": "$ (\\pi^{+} \\rightarrow) \\mu^{+} \\rightarrow e^{+} $"
+        },
+        "legend_position": "lower right",
+        "legend_n_columns": 2,
+        "energy_cutoff": 0.5,
+        "merge_particle_ids": {
+            "4": [4, 999177, 999175, 1054053, 1039827, 1077450]
+        },
+        "plot_offsets": {
+            "a": {
+                "x": 0,
+                "y": -600
+            }
+        },
+        "plot_particle_ids":{
+            "a": [451974, 451975],
+            "b": [4, 999177, 999175, 1054053, 1039827, 1077450, 1107561],
+            "c": [4, 999177, 999175, 1054053, 1039827, 1077450, 1107561],
+            "d": [174838, 181061],
+            "e": [2, 2401138],
+            "f": [376763, 383085]
+        },
+        "plot_primaries": {
+            "a": true
+        }
+    },
+    "g4_0906/r0/event_0045.mac_data.root":{
+    "view": "xz",
+        "plot_axes": true,
+        "hit_lifetime_ns": 5,
+        "run_clustering": true,
+        "merge_cluster": [
+            ["a", "b", "c", "e"]
+        ],
+        "db_scan_params": {
+            "eps": 300,
+            "min_samples": 5
+        },
+        "cluster_reindex": true,
+        "hit_survival_prob": 0.5,
+        "cluster_titles": {
+            "a": "Prompt"
+        },
+        "legend_position": "upper left",
+        "legend_n_columns": 1,
+        "energy_cutoff": 0.5,
+        "merge_particle_ids": {},
+        "plot_offsets": {},
+        "plot_particle_ids":{},
+        "plot_primaries": {
+            "a": true
+        }
+    },
+    "g4_0906/r0/event_0830.mac_data.root":{
+        "view": "xz",
+        "plot_axes": false,
+        "hit_lifetime_ns": 5,
+        "run_clustering": true,
+        "merge_cluster": [
+        ],
+        "db_scan_params": {
+            "eps": 300,
+            "min_samples": 5
+        },
+        "cluster_reindex": true,
+        "hit_survival_prob": 0.5,
+        "cluster_titles": {
+            "a": "Prompt",
+            "b": "Neutron",
+            "c": "Pion decay"
+        },
+        "legend_position": "lower right",
+        "legend_n_columns": 1,
+        "energy_cutoff": 0.5,
+        "merge_particle_ids": {
+            "9":[387705, 421757, 462726]
+        },
+        "scalebar_positions": {
+            "a": "upper left",
+            "b": "lower right",
+            "c": "lower left"
+        },
+        "rectangle_label_positions": {
+            "c": "upper right",
+            "b": "upper right"
+        },
+        "plot_offsets": {},
+        "plot_particle_ids":{
+            "b": [9],
+            "c": [10, 314192, 320486]
+        },
+        "plot_primaries": {
+            "a": true
+        },
+        "time_axis_cut":[300, 5500]
+
+    },
+    "magnetised_0.4T_r0_0830_data.root":{
+        "view": "xz",
+        "plot_axes": true,
+        "hit_lifetime_ns": 5,
+        "run_clustering": true,
+        "merge_cluster": [
+        ],
+        "db_scan_params": {
+            "eps": 300,
+            "min_samples": 5
+        },
+        "cluster_reindex": true,
+        "hit_survival_prob": 0.5,
+        "cluster_titles": {
+            "a": "Prompt",
+            "b": "?",
+            "c": "Pion decay"
+        },
+        "legend_position": "upper left",
+        "legend_n_columns": 1,
+        "energy_cutoff": 0.5,
+        "merge_particle_ids": {},
+        "plot_offsets": {},
+        "plot_particle_ids":{},
+        "plot_primaries": {
+            "a": true
+        }
     }
+
+
+
 }

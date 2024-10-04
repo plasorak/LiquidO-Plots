@@ -73,6 +73,10 @@ class Cluster:
         y_min = clusters[0].y_min
         y_max = clusters[0].y_max
 
+        hit_x = np.ndarray([])
+        hit_y = np.ndarray([])
+        hit_t = np.ndarray([])
+
         for cluster in clusters:
             def biggest(a, b):
                 if a is None or b is None:
@@ -90,6 +94,9 @@ class Cluster:
             y_min = smallest(cluster.y_min, y_min)
             y_max = biggest (cluster.y_max, y_max)
             n_hits += cluster.n_hits
+            hit_x = np.append(hit_x, cluster.hit_x)
+            hit_y = np.append(hit_y, cluster.hit_y)
+            hit_t = np.append(hit_t, cluster.hit_t)
 
         return Cluster(
             t_min = t_min,
@@ -99,6 +106,9 @@ class Cluster:
             y_min = y_min,
             y_max = y_max,
             n_hits = n_hits,
+            hit_x = hit_x,
+            hit_y = hit_y,
+            hit_t = hit_t,
         )
 
 class TimeClusterMaker:

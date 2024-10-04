@@ -44,22 +44,16 @@ class AnchoredHScaleBar(matplotlib.offsetbox.AnchoredOffsetbox):
                  borderpad=borderpad, child=self.vpac, prop=prop, frameon=frameon,
                  **kwargs)
 
-def add_padding(left, right, side:str, padding:float=0.):
-    if not side in ['left', 'right']:
-        raise RuntimeError(f'"side" should be "left" or "right". You provided: "{side}"')
-    # print(f'\n\n{left=}, {right=}, {side=}, {padding=}')
+def add_padding(x_min, x_max, y_min, y_max, padding:float=0.):
+    # width  = x_max - x_min
+    # height = y_max - y_min
 
-    if left>right:
-        raise RuntimeError(f'"left" should be bigger than "right". You provided: {left=}, {right=}')
+    x_max = x_max + padding #width  * (padding / 100.)
+    x_min = x_min - padding #width  * (padding / 100.)
+    y_max = y_max + padding # height * (padding / 100.)
+    y_min = y_min - padding #height * (padding / 100.)
 
-    width = right-left
-
-    if   right>0 and side=="right": number = right + width * (padding / 100.)
-    elif right<0 and side=="right": number = right + width * (padding / 100.)
-    elif left >0 and side=="left" : number = left  - width * (padding / 100.)
-    elif left <0 and side=='left' : number = left  - width * (padding / 100.)
-
-    return number
+    return x_min, x_max, y_min, y_max
 
 def adjust_for_aspect_ratio(x_min, x_max, y_min, y_max, aspect_ratio):
     current_aspect_ratio = (x_max - x_min) / (y_max - y_min)
@@ -128,11 +122,12 @@ def add_truth_particle(
 
         ke = e - M
 
-        primary_str = ' (primary)' if primary else ''
+        primary_str = ' (prim.)' if primary else ''
         legend_str = f' {legend_label}' if legend_label else ''
         rprint(f"Plotting {tid}: {pdg=} {M=} {ke=} {e=} {p.name=} {primary_str}")
-
-        label = f'${p.latex_name}$ KE {ke:.1f} MeV{primary_str}{legend_str}' if p is not None else f'{pdg} E {e} MeV'
+        ke_str = f"{ke:.0f}" if ke > 10 else f"{ke:.1f}"
+        primary_str=''
+        label = f'${p.latex_name}$ {ke_str} MeV{primary_str}{legend_str}' if p is not None else f'{pdg} E {e} MeV'
 
         if tid in particle_color:
             label = None
@@ -156,6 +151,7 @@ def plot(
     hit_key_y,
     bin_x,
     bin_y,
+    offsets,
     truth_data,
     label_x,
     label_y,
@@ -166,13 +162,15 @@ def plot(
     y_min,
     y_max,
     plot_axes = False,
+    plot_boundary = True,
     with_underlay = True,
     aspect_ratio = 1,
     legend_label = None,
     plot_primaries = True,
     plot_particle_ids = [],
+    scalebar_position = 'lower right',
 ):
-    rprint(f"Plotting {label} {title}, {plot_primaries=}, {plot_particle_ids=}")
+    rprint(f"Plotting {label=} {title=}, {plot_primaries=}, {plot_particle_ids=}")
     hit_data_present = hit_data.where(hit_data["h_time"]>time_start, inplace=False)# * hit_data["h_time"]<time_end
     hit_data_present = hit_data_present.where(hit_data_present["h_time"]<time_end, inplace=False)# * hit_data["h_time"]<time_end
 
@@ -209,12 +207,13 @@ def plot(
     y_min = np.min(hit_data_present[hit_key_y]) if y_min is None else y_min
     y_max = np.max(hit_data_present[hit_key_y]) if y_max is None else y_max
 
-    x_min_padded, x_max_padded, y_min_padded, y_max_padded = adjust_for_aspect_ratio(x_min, x_max, y_min, y_max, aspect_ratio)
+    x_min_padded, x_max_padded, y_min_padded, y_max_padded = add_padding(x_min, x_max, y_min, y_max, 100)
 
-    x_min = x_min_padded
-    x_max = x_max_padded
-    y_min = y_min_padded
-    y_max = y_max_padded
+    rprint(f"{label=} uses {offsets=}")
+    x_min = x_min_padded + offsets['x']
+    x_max = x_max_padded + offsets['x']
+    y_min = y_min_padded + offsets['y']
+    y_max = y_max_padded + offsets['y']
 
     add_truth_particle(
         ax,
@@ -232,11 +231,18 @@ def plot(
     ax.set_ylim((y_min, y_max))
 
     if label is not None:
-
+        #label_pos = ax.transAxes.transform((0.05, 0.95))# + np.array((0, -10))
+        #rprint(f"{label_pos=}")
+        xy = (0,1) if label != "a" else (0.5, 1)
+        xytext = (50, -70) if label != "a" else (0, -70)
+        # xy = (0, 1)
+        # xytext = (0, -70)
         ax.annotate(
             f'{label}: {title}' if title is not None else label,
-            (0.01, 0.99) if label == "a" else (0.05, 0.95),
-            xycoords='axes fraction',
+            xy=xy, xycoords='axes fraction',
+            xytext=xytext, textcoords='offset pixels',
+            horizontalalignment='left' if label != "a" else "center",
+            verticalalignment="top",
             backgroundcolor=('white', 0.8),
             va='center'
         )
@@ -250,7 +256,12 @@ def plot(
     if not plot_axes:
         ax.tick_params(bottom=False, labelbottom=False, left=False, labelleft=False)
 
-    ax.set_aspect('equal', adjustable='box')
+    if not plot_boundary:
+        ax.spines['top'  ].set_visible(False)
+        #ax.spines['bottom'].set_visible(False) this one is visible
+        ax.spines['left'  ].set_visible(False)
+        ax.spines['right' ].set_visible(False)
+    ax.set_aspect((x_max-x_min)/(y_max-y_min), adjustable='box')
 
     from mpl_toolkits.axes_grid1.anchored_artists import AnchoredSizeBar
 
@@ -267,13 +278,16 @@ def plot(
     scalebar = AnchoredSizeBar(
         ax.transData,
         *size_args,
-        'lower left',
+        scalebar_position,
         pad=1,
         color='red',
         frameon=False,
         size_vertical=1)
 
     ax.add_artist(scalebar)
+    for k, spine in ax.spines.items():  #ax.spines is a dictionary
+        rprint(f'{label} {title}\'s {k} zorder : {spine.get_zorder()}')
+
 
     return x_min, x_max, y_min, y_max
 
@@ -312,12 +326,28 @@ def main(input_data, output, plot_options):
             "min_samples": 5
         }
     )
-    cluster_titles    = plot_options.get('cluster_titles', {})
-    plot_particle_ids = plot_options.get('plot_particle_ids', {})
-    plot_primaries    = plot_options.get('plot_primaries', {})
+    cluster_titles     = plot_options.get('cluster_titles', {})
+    plot_particle_ids  = plot_options.get('plot_particle_ids', {})
+    plot_primaries     = plot_options.get('plot_primaries', {})
+    merge_particle_ids = plot_options.get('merge_particle_ids', {})
+    energy_cutoff      = plot_options.get('energy_cutoff', 0.5) # just below the electron/positron rest mass to see the pair produced gammas
+    legend_position    = plot_options.get("legend_position", "best")
+    legend_n_columns   = plot_options.get("legend_n_columns", 2)
+    plot_offsets       = plot_options.get("plot_offsets", {})
+    time_axis_cut      = plot_options.get("time_axis_cut", [])
+    scalebar_positions = plot_options.get("scalebar_positions", {})
+    rectangle_label_positions = plot_options.get("rectangle_label_positions", {})
+
 
     hit_data   = uproot.open(input_data)['op_hits'] .arrays(library="pd")
     truth_data = uproot.open(input_data)['mc_truth'].arrays(library="pd")
+
+    for new_id, particles_to_rename in merge_particle_ids.items():
+        for particle_to_rename in particles_to_rename:
+            truth_data.loc[truth_data["track_id"] == particle_to_rename, "track_id"] = int(new_id)
+
+    truth_data = truth_data.loc[truth_data["i_E"] > energy_cutoff]
+
 
     if   view == 'xz':
         hit_data = hit_data[hit_data['h_is_xz']]
@@ -459,7 +489,6 @@ def main(input_data, output, plot_options):
 
 
     fig = plt.figure(figsize=(10,8))
-
     n_decay_clusters = len(clusters) - 1
 
     nrows = 3
@@ -472,10 +501,19 @@ def main(input_data, output, plot_options):
         rprint(cluster)
     #exit(0)
 
-    gs = GridSpec(nrows=nrows, ncols=ncols, figure=fig, hspace=0.05, wspace=0.05)
+    gs = GridSpec(nrows=nrows, ncols=ncols, figure=fig, hspace=0.0, wspace=0.05)
     gs.update(left=0.07, right=0.99, bottom=0.07, top=0.99)
 
-    axtime = fig.add_subplot(gs[nrows-1, :])
+    if len(time_axis_cut) == 0:
+        axtime = [
+            fig.add_subplot(gs[nrows-1, :])
+        ]
+    else:
+        axtime = [
+            fig.add_subplot(gs[nrows-1, :int(ncols/2)]),
+            fig.add_subplot(gs[nrows-1, int(ncols/2):])
+        ]
+
     axfull = fig.add_subplot(gs[:nrows-1, :3])
     axclus = []
 
@@ -529,31 +567,6 @@ def main(input_data, output, plot_options):
 
     rprint(f"histogram plotting order: {hit_sorted_labels}")
 
-    axtime.hist(
-        [clusters[label].hit_t for label in hit_sorted_labels],
-        time_binning,
-        log=True,
-        histtype='bar',
-        stacked=True,
-        rasterized=True,
-        label=[f'Cluster {label}' for label in hit_sorted_labels],
-        #color=CB_color_cycle[:len(hit_sorted_labels)]
-    )
-
-    time_counts = np.zeros(len(time_binning)-1)
-    for cluster in clusters.values():
-        counts, _ = np.histogram(cluster.hit_t, bins=time_binning)
-        time_counts += counts
-
-    axtime.set_xlabel('Time [ns]')
-    axtime.set_ylabel('Number of hits')
-    y_max = np.max(time_counts)*10
-    axtime.set_ylim((0.5, y_max))
-
-    handles, labels = axtime.get_legend_handles_labels()
-    sorted_labels = sorted(labels)
-    sorted_handles = [h for _, h in sorted(zip(labels, handles))]
-    axtime.legend(sorted_handles, sorted_labels)
 
     for label, cluster in clusters.items():
 
@@ -572,6 +585,11 @@ def main(input_data, output, plot_options):
         ax = axclus[count_total-1] if count_total>0 else axfull
         # print(f"label = {label}")
         # print(f"title = {cluster_titles.get(label, None)}")
+
+        plot_prim = plot_primaries.get(label)
+        if plot_prim is None and label == 'a':
+            plot_prim = True
+
         x_min, x_max, y_min, y_max = plot(
             ax = ax,
             label = label,
@@ -581,6 +599,10 @@ def main(input_data, output, plot_options):
             hit_key_y = hit_y_key,
             bin_x = binning_x,
             bin_y = binning_y,
+            offsets = plot_offsets.get(label, {
+                "x": 0,
+                "y": 0,
+            }),
             truth_data = truth_data,
             label_x = None,
             label_y = None,
@@ -593,10 +615,12 @@ def main(input_data, output, plot_options):
             with_underlay = count_total>0,
             aspect_ratio = 1,
             plot_axes = plot_axes,
-            plot_primaries = plot_primaries.get(label, False),
+            plot_boundary = count_total>0,
+            plot_primaries = plot_prim,
             plot_particle_ids = plot_particle_ids.get(label, []),
             #plot_list = plot_list.get(label, None),
             legend_label = f"({label})" if count_total>0 else None,
+            scalebar_position = scalebar_positions.get(label, 'lower right'),
         )
 
 
@@ -611,10 +635,35 @@ def main(input_data, output, plot_options):
         pass
 
     for label, rect in regions.items():
-        axfull.add_patch(rect)
-        rect.set(facecolor='none', edgecolor='black', zorder=8)
+        xs = [
+            rect.get_x(),
+            rect.get_x(),
+            rect.get_x()+rect.get_width(),
+            rect.get_x()+rect.get_width(),
+#            rect.get_x()
+        ]
+        ys = [
+            rect.get_y(),
+            rect.get_y()+rect.get_height(),
+            rect.get_y()+rect.get_height(),
+            rect.get_y(),
+ #           rect.get_y(),
+        ]
+
+        axfull.plot(xs, ys, color='red', zorder=8, linewidth=1.5, linestyle='-')
+        # axfull.add_patch(rect)
+        # rect.set(facecolor='none', edgecolor='red', zorder=8, linewidth=1.5)
+        # rect.set_linestyle('-')
+        #rect.
         position_annotations = [rect.get_x()+100, rect.get_y()+rect.get_height()-150]
-        axfull.annotate(label, position_annotations)
+        rlp = rectangle_label_positions.get(label)
+        if 'right' in rlp:
+            position_annotations[0] = rect.get_x()+rect.get_width()-150
+        if 'bottom' in rlp:
+            position_annotations[1] = rect.get_y()+100
+
+
+        axfull.annotate(label, position_annotations, color='red')
         x_min = rect.get_x()
         x_max = rect.get_x()+rect.get_width()
         y_min = rect.get_y()
@@ -622,50 +671,26 @@ def main(input_data, output, plot_options):
 
         x_min_full, x_max_full = axfull.get_xlim()
         y_min_full, y_max_full = axfull.get_ylim()
-        padding_x = []
-        padding_y = []
         stradling_out_of_bounds = False
 
         if x_min < x_min_full and x_max > x_min_full:
-            padding_x += ["left"]
             x_min_full = x_min
             stradling_out_of_bounds = True
         if x_max > x_max_full and x_min < x_max_full:
-            padding_x += ["right"]
             x_max_full = x_max
             stradling_out_of_bounds = True
         if y_min < y_min_full and y_max > y_min_full:
-            padding_y += ["left"]
             y_min_full = y_min
             stradling_out_of_bounds = True
         if y_max > y_max_full and y_min < y_max_full:
-            padding_y += ["right"]
             y_max_full = y_max
             stradling_out_of_bounds = True
 
-        if stradling_out_of_bounds:
-
-            for px in padding_x:
-                if px == "left":
-                    x_min_full = add_padding(x_min_full, x_max_full, side=px, padding=5.)
-                else:
-                    x_max_full = add_padding(x_min_full, x_max_full, side=px, padding=5.)
-
-            for py in padding_y:
-                if py == "left":
-                    y_min_full = add_padding(y_min_full, y_max_full, side=py, padding=5.)
-                else:
-                    y_max_full = add_padding(y_min_full, y_max_full, side=py, padding=5.)
-
-            x_min_padded, x_max_padded, y_min_padded, y_max_padded = adjust_for_aspect_ratio(
-                x_min_full,
-                x_max_full,
-                y_min_full,
-                y_max_full,
-                1
-            )
-            axfull.set_xlim((x_min_padded, x_max_padded))
-            axfull.set_ylim((y_min_padded, y_max_padded))
+        # if stradling_out_of_bounds:
+        #     x_min_padded, x_max_padded, y_min_padded, y_max_padded = add_padding(x_min_full, x_max_full, y_min_full, y_max_full, 10)
+        #     # x_min_padded, x_max_padded, y_min_padded, y_max_padded = add_padding(*adjust_for_aspect_ratio(x_min_full, x_max_full, y_min_full, y_max_full, 1), 10)
+        #     axfull.set_xlim((x_min_padded, x_max_padded))
+        #     axfull.set_ylim((y_min_padded, y_max_padded))
 
     for label, rect in regions.items():
         x_min = rect.get_x()
@@ -674,11 +699,18 @@ def main(input_data, output, plot_options):
         y_max = rect.get_y()+rect.get_height()
         x_min_full, x_max_full = axfull.get_xlim()
         y_min_full, y_max_full = axfull.get_ylim()
+        # x_min=357.5 x_max=1637.5
+        # y_min=-2042.5 y_max=-657.5
+        # x_min_full=-572.5 x_max_full=3377.5
+        # y_min_full=-422.5 y_max_full=2672.5
+        # arrow_position=array([1115.45407018, -629.1695711 ])
+        # arrow_dxdy=array([ -25.51519376, -155.9261841 ])
+        left_arrow   = x_min < x_min_full and x_max < x_min_full
+        right_arrow  = x_min > x_max_full and x_max > x_max_full
+        bottom_arrow = y_min < y_min_full and y_max < y_min_full
+        top_arrow    = y_min > y_max_full and y_max > y_max_full
 
-        if (x_min < x_min_full and x_max < x_min_full or
-            x_min > x_max_full and x_max > x_max_full or
-            y_min < y_min_full and y_max < y_min_full or
-            y_min > y_max_full and y_max > y_max_full):
+        if left_arrow or right_arrow or bottom_arrow or top_arrow:
             rprint(f"{x_min=} {x_max=} {y_min=} {y_max=} {x_min_full=} {x_max_full=} {y_min_full=} {y_max_full=}")
             vector = np.array([
                 (x_max+x_min)/2 - (x_max_full+x_min_full)/2,
@@ -690,26 +722,33 @@ def main(input_data, output, plot_options):
             ])
             rprint(f'vector: {vector}')
             unit_vector = vector / np.linalg.norm(vector)
-            half_width = (x_max_full - x_min_full) / 2
-            arrow_position = center + unit_vector * half_width * 0.9
+            half_width = (x_max_full - x_min_full) / 2 if left_arrow or right_arrow else (y_max_full - y_min_full) / 2
+            arrow_position = center + unit_vector * half_width * 0.8+np.array([250, 0])
             arrow_dxdy = unit_vector*half_width*0.08
-
+            rprint(f'{arrow_position=}')
+            rprint(f'{arrow_dxdy=}')
             axfull.arrow(
                 arrow_position[0], arrow_position[1],
                 arrow_dxdy[0], arrow_dxdy[1],
                 linewidth=2,
                 head_width=50,
-                fc ='black', ec ='black',
+                fc ='red', ec ='red',
             )
             distance_vector = np.array([
                 (x_max-x_min)/2 - arrow_position[0],
                 (y_max-y_min)/2 - arrow_position[1],
             ])
+            print(arrow_position)
+            print(arrow_dxdy*0.5)
+            print(np.array([arrow_dxdy[0], -arrow_dxdy[1]]))
+            print(arrow_position+arrow_dxdy*0.5-np.array([arrow_dxdy[0], -arrow_dxdy[1]]))
             how_far = np.linalg.norm(distance_vector)
             axfull.annotate(
                 f"{label}: {how_far/1000:.1f} m",
-                arrow_position-np.array([half_width*0.05, half_width*0.05]),
-                )
+                arrow_position+arrow_dxdy*0.5-np.array([arrow_dxdy[1], -arrow_dxdy[0]]),
+                backgroundcolor=('white', 0.8),
+                color='red',
+            )
 
 
     handles, labels = axfull.get_legend_handles_labels()
@@ -717,7 +756,128 @@ def main(input_data, output, plot_options):
         handles_insert, labels_insert = ax.get_legend_handles_labels()
         handles += handles_insert
         labels += labels_insert
-    axfull.legend(handles, labels,ncol=2).set_zorder(20)
+    axfull.legend(handles, labels,ncol=legend_n_columns, loc=legend_position).set_zorder(20)
+
+
+
+    if len(axtime)==0:
+        axtime[0].hist(
+            [clusters[label].hit_t for label in hit_sorted_labels],
+            time_binning,
+            log=True,
+            histtype='bar',
+            stacked=True,
+            rasterized=True,
+            label=[f'{label}: {cluster_titles.get(label, "")}' for label in hit_sorted_labels],
+        )
+
+        time_counts = np.zeros(len(time_binning)-1)
+        for cluster in clusters.values():
+            counts, _ = np.histogram(cluster.hit_t, bins=time_binning)
+            time_counts += counts
+
+        axtime[0].set_xlabel('Time [ns]')
+        axtime[0].set_ylabel('Number of hits')
+        y_max = np.max(time_counts)*10
+        axtime[0].set_ylim((0.5, y_max))
+
+        handles, labels = axtime[0].get_legend_handles_labels()
+        sorted_labels = sorted(labels)
+        sorted_handles = [h for _, h in sorted(zip(labels, handles))]
+        axtime[0].legend(sorted_handles, sorted_labels)
+
+        axtime[0].spines['left'] = 100
+        axtime[0].spines['right'] = 100
+        axtime[0].spines['bottom'] = 100
+        axtime[0].spines['top'] = 100
+
+
+    else:
+        axtime[0].hist(
+            [clusters[label].hit_t for label in hit_sorted_labels],
+            time_binning,
+            log=True,
+            histtype='bar',
+            stacked=True,
+            rasterized=True,
+            label=[f'{label}: {cluster_titles.get(label, "")}' for label in hit_sorted_labels],
+
+        )
+        n, b, p = axtime[1].hist(
+            [clusters[label].hit_t for label in hit_sorted_labels],
+            time_binning,
+            log=True,
+            histtype='bar',
+            stacked=True,
+            rasterized=True,
+            label=[f'{label}: {cluster_titles.get(label, "")}' for label in hit_sorted_labels],
+        )
+        time_counts = np.zeros(len(time_binning)-1)
+        for cluster in clusters.values():
+            counts, _ = np.histogram(cluster.hit_t, bins=time_binning)
+            time_counts += counts
+
+        axtime[0].annotate('Time [ns]', (0.96,-0.15), xycoords='axes fraction')# transform=axtime[0].transAxes)
+        axtime[0].set_ylabel('Number of hits')
+        y_max = np.max(time_counts)*10
+        y_min = 0.5
+        axtime[0].set_ylim((y_min, y_max))
+        axtime[1].set_ylim((y_min, y_max))
+
+        s0 = b[0]
+        e0 = time_axis_cut[0]
+        s1 = time_axis_cut[1]
+        e1 = b[-1]
+
+        range_0 = e0-s0
+        range_1 = e1-s1
+        range_ = max(range_0, range_1)
+        s0 = s0 - 0.02 * range_
+        s1 = s1 - 0.02 * range_
+        e0 = s0 + range_
+        e1 = s1 + range_
+
+        axtime[0].set_xlim((s0, e0))
+        axtime[1].set_xlim((s1, e1))
+
+        axtime[0].spines['right'].set_visible(False)
+        axtime[1].spines['left'].set_visible(False)
+        axtime[0].yaxis.tick_left()
+        axtime[0].tick_params(labelright='off')
+        axtime[1].yaxis.set_tick_params(which='both',left=False)
+        # axtime[1].tick_params('y', which='both',  )
+        axtime[1].yaxis.set_ticks([])
+        #axtime[1].yaxis.minorticks_off()
+
+        d = .015  # how big to make the diagonal lines in axes coordinates
+        # arguments to pass plot, just so we don't keep repeating them
+        kwargs = dict(transform=axtime[0].transAxes, color='k', clip_on=False, linewidth=1)
+        axtime[0].plot((1-d, 1+d), (-d*2, +d*2), **kwargs)
+        # axtime[0].plot((1-d, 1+d), (1-d*2, 1+d*2), **kwargs)
+
+        kwargs.update(transform=axtime[1].transAxes)  # switch to the bottom axes
+        # axtime[1].plot((-d, +d), (1-d*2, 1+d*2), **kwargs)
+        axtime[1].plot((-d, +d), (-d*2, +d*2), **kwargs)
+
+
+        handles, labels = axtime[0].get_legend_handles_labels()
+        sorted_labels = sorted(labels)
+        sorted_handles = [h for _, h in sorted(zip(labels, handles))]
+        axtime[1].legend(sorted_handles, sorted_labels)
+
+        axtime[0].spines['left'  ].set_zorder(100)
+        axtime[0].spines['right' ].set_zorder(100)
+        axtime[0].spines['bottom'].set_zorder(100)
+        axtime[0].spines['top'   ].set_zorder(100)
+
+        axtime[1].spines['left'  ].set_zorder(100)
+        axtime[1].spines['right' ].set_zorder(100)
+        axtime[1].spines['bottom'].set_zorder(100)
+        axtime[1].spines['top'   ].set_zorder(100)
+
+
+
+
 
     fig.savefig(output, dpi=400)
     rprint(cluster_table)
