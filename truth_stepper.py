@@ -82,7 +82,7 @@ def stepper(mc_truth, track_id, with_children):
     from rich.table import Table
     from particle import Particle
 
-    t = Table(title=f"Track #{track_id} G4 steps")
+    t = Table(title=f"Track #{track_id} has {len(mc_truth_particle)} G4 steps")
     for column in mc_truth_particle.columns:
         t.add_column(column)
 
@@ -97,6 +97,7 @@ def stepper(mc_truth, track_id, with_children):
             f"{row['i_dE']:0.2f}", f"{row['i_E']-p.mass:.2f}", f"{row['i_time']:0.2f}"
         )
     pprint(t)
+
 
 
 @click.command()

@@ -125,7 +125,7 @@
         },
         "legend_position": "lower right",
         "legend_n_columns": 1,
-        "energy_cutoff": 0.5,
+        "energy_cutoff": -1,
         "merge_particle_ids": {
             "9":[387705, 421757, 462726]
         },
@@ -140,20 +140,72 @@
         },
         "plot_offsets": {},
         "plot_particle_ids":{
+            "a": [2,4,8,9,10],
             "b": [9],
-            "c": [10, 314192, 320486]
+            "c": [10, 320486, 386099, 386100]
         },
         "plot_primaries": {
-            "a": true
+            "a": false
         },
         "time_axis_cut":[300, 5500]
 
     },
     "magnetised_0.4T_r0_0830_data.root":{
         "view": "xz",
-        "plot_axes": true,
+        "plot_axes": false,
         "hit_lifetime_ns": 5,
-        "run_clustering": true,
+        "run_clustering": false,
+        "merge_cluster": [
+        ],
+        "invisible_spines":{
+            "a": ["top", "right", "left", "bottom"]
+        },
+        "db_scan_params": {
+            "eps": 300,
+            "min_samples": 5
+        },
+        "cluster_reindex": true,
+        "hit_survival_prob": 0.5,
+        "cluster_titles": {
+            "a": "Prompt",
+            "b": "Stray photon",
+            "c": "Pion decay"
+        },
+        "legend_position": "upper left",
+        "legend_n_columns": 1,
+        "energy_cutoff": 0.5,
+        "merge_particle_ids": {
+        },
+        "plot_offsets": {},
+        "plot_particle_ids":{
+            "a":[2,4,8,9,10, 496794],
+            "b":[496794],
+            "c":[10, 320335]
+        },
+        "rectangle_label_positions": {
+            "c": "upper right"
+        },
+        "plot_primaries": {
+            "a": false
+        },
+        "clusters_data": {
+            "a": {
+                "t_min":0.03997130227221777, "t_max":195.36712548408036, "x_min":-232.5, "x_max":2857.5, "y_min":-352.5, "y_max":2602.5
+            },
+            "b": {
+                "t_min":274.0222584565983, "t_max":408.957096933939, "x_min":-112.5, "x_max":607.5, "y_min":-397.5, "y_max":112.5
+            },
+            "c": {
+                "t_min":5.754693497217088, "t_max":83.15074603957746, "x_min":457.5, "x_max":877.5, "y_min":-1402.5, "y_max":-1042.5
+            }
+        }
+    },
+    "g4_0906/r1/event_0129.mac_data.root":{
+        "layout": "vertical",
+        "view": "xz",
+        "plot_axes": false,
+        "hit_lifetime_ns": 5,
+        "run_clustering": false,
         "merge_cluster": [
         ],
         "db_scan_params": {
@@ -164,20 +216,68 @@
         "hit_survival_prob": 0.5,
         "cluster_titles": {
             "a": "Prompt",
-            "b": "?",
-            "c": "Pion decay"
+            "b": "Neutrons",
+            "c": "Muon decay",
+            "d": "Pion decay"
         },
-        "legend_position": "upper left",
-        "legend_n_columns": 1,
+        "legend_position": "upper right",
+        "legend_n_columns": 2,
         "energy_cutoff": 0.5,
-        "merge_particle_ids": {},
+        "merge_particle_ids": {
+            "8": [661711, 677259, 700344],
+            "9": [634113, 653515],
+            "10": [613459, 625361]
+        },
         "plot_offsets": {},
-        "plot_particle_ids":{},
+        "plot_particle_ids":{
+            "a": [2,7,8,9,10,11],
+            "b": [7,9],
+            "c": [2, 2856482],
+            "d": [11, 515079]
+        },
         "plot_primaries": {
-            "a": true
+            "a": false
+        },
+        "time_axis_cut":[300, 1250],
+        "rectangle_label_positions": {
+            "d": "lower right"
+        },
+        "invisible_spines":{
+            "a": ["top", "right", "left", "bottom"]
+        },
+        "clusters_data":{
+            "a": {
+                "t_min": 0.07323337974972476,
+                "t_max": 209.23717237215592,
+                "x_min": -292.5,
+                "x_max": 4007.5,
+                "y_min": -852.5,
+                "y_max": 1057.5
+            },
+            "b": {
+                "t_min":1322.231521759281,
+                "t_max":1439.6012867483498,
+                "x_min":3397.5,
+                "x_max":3967.5,
+                "y_min": -112.5,
+                "y_max": 382.5
+            },
+            "c": {
+                "t_min": 1538.380712081773,
+                "t_max": 1658.1460493112224,
+                "x_min": 517.5,
+                "x_max": 1747.5,
+                "y_min": 202.5,
+                "y_max": 1087.5
+            },
+            "d": {
+                "t_min": 12.729659600888471,
+                "t_max": 147.6634367084994,
+                "x_min": 607.5,
+                "x_max": 1627.5,
+                "y_min": -2122.5,
+                "y_max": -1042.5
+            }
         }
     }
-
-
-
 }

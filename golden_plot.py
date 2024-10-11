@@ -12,14 +12,24 @@ import pandas as pd
 from matplotlib.gridspec import GridSpec
 import matplotlib
 
-CB_color_cycle = ['#ff7f00', '#4daf4a',
-                  '#f781bf', '#a65628', '#984ea3', '#377eb8',
-                  '#999999', '#e41a1c', '#dede00']
-
+CB_color_cycle = [
+    '#ff7f00',
+    '#4daf4a',
+    '#f781bf',
+    '#a65628',
+    '#984ea3',
+    '#377eb8',
+    '#999999',
+    '#e41a1c',
+    '#dede00'
+]
+# cmap = 'OrRd'
+cmap = None#'OrRd'
 #np.set_printoptions(threshold=sys.maxsize)
 
 pd.options.mode.copy_on_write = True
 particle_color = {}
+particle_color_index = 0
 
 class AnchoredHScaleBar(matplotlib.offsetbox.AnchoredOffsetbox):
     """ size: length of bar in data units
@@ -87,7 +97,8 @@ def add_truth_particle(
     plot_particle_ids=[],
     ):
 
-    global particle_color
+    global particle_color, particle_color_index
+
 
     truth_key_x = hit_key_x.replace('h_pos_', 'i_pos_')
     truth_key_y = hit_key_y.replace('h_pos_', 'i_pos_')
@@ -99,6 +110,7 @@ def add_truth_particle(
 
     for tid in all_track_ids:
         track_data = truth_data[truth_data['track_id'] == tid]
+
         track_data.sort_values('i_time', inplace=True)
         xs = track_data.loc[:, truth_key_x]
         ys = track_data.loc[:, truth_key_y]
@@ -122,12 +134,17 @@ def add_truth_particle(
 
         ke = e - M
 
-        primary_str = ' (prim.)' if primary else ''
-        legend_str = f' {legend_label}' if legend_label else ''
-        rprint(f"Plotting {tid}: {pdg=} {M=} {ke=} {e=} {p.name=} {primary_str}")
-        ke_str = f"{ke:.0f}" if ke > 10 else f"{ke:.1f}"
+        # primary_str = ' (prim.)' if primary else ''
         primary_str=''
+
+        legend_str = f' {legend_label}' if legend_label else ''
+        #rprint(f"Plotting {tid}: {pdg=} {M=} {ke=} {e=} {p.name=} {primary_str}\n{track_data=}\n{len(track_data)=}")
+
+        ke_str = f"{ke:.0f}" if ke > 10 else f"{ke:.1f}"
         label = f'${p.latex_name}$ {ke_str} MeV{primary_str}{legend_str}' if p is not None else f'{pdg} E {e} MeV'
+        if ke > 1000:
+            ke_str = f"{ke/1000:.2f}"
+            label = f'${p.latex_name}$ {ke_str} GeV{primary_str}{legend_str}' if p is not None else f'{pdg} E {e} MeV'
 
         if tid in particle_color:
             label = None
@@ -137,9 +154,10 @@ def add_truth_particle(
             ys,
             linewidth=2,
             label = label,
-            color = particle_color[tid] if tid in particle_color else None,
+            color = particle_color[tid] if tid in particle_color else CB_color_cycle[particle_color_index%(len(CB_color_cycle))],
         )
         particle_color[tid] = lines[0].get_c()
+        particle_color_index += 1
 
 
 def plot(
@@ -162,13 +180,13 @@ def plot(
     y_min,
     y_max,
     plot_axes = False,
-    plot_boundary = True,
     with_underlay = True,
     aspect_ratio = 1,
     legend_label = None,
     plot_primaries = True,
     plot_particle_ids = [],
     scalebar_position = 'lower right',
+    invisible_spines = ['top', 'bottom', 'left', 'right'],
 ):
     rprint(f"Plotting {label=} {title=}, {plot_primaries=}, {plot_particle_ids=}")
     hit_data_present = hit_data.where(hit_data["h_time"]>time_start, inplace=False)# * hit_data["h_time"]<time_end
@@ -200,7 +218,7 @@ def plot(
         underlay_colormesh = ax.pcolormesh(X, Y, underlay_hit_counts, norm='log', rasterized=True, cmap='Greys', vmin=np.min(underlay_hit_counts), vmax=np.max(underlay_hit_counts)*10)
 
     hit_counts = np.ma.masked_array(hit_counts, hit_counts<0.5)
-    i = ax.pcolormesh(X, Y, hit_counts, norm='log', rasterized=True, vmin=np.min(hit_counts), vmax=np.max(hit_counts))
+    i = ax.pcolormesh(X, Y, hit_counts, norm='log', rasterized=True, vmin=np.min(hit_counts), vmax=np.max(hit_counts), cmap=cmap)
 
     x_min = np.min(hit_data_present[hit_key_x]) if x_min is None else x_min
     x_max = np.max(hit_data_present[hit_key_x]) if x_max is None else x_max
@@ -209,7 +227,6 @@ def plot(
 
     x_min_padded, x_max_padded, y_min_padded, y_max_padded = add_padding(x_min, x_max, y_min, y_max, 100)
 
-    rprint(f"{label=} uses {offsets=}")
     x_min = x_min_padded + offsets['x']
     x_max = x_max_padded + offsets['x']
     y_min = y_min_padded + offsets['y']
@@ -256,12 +273,11 @@ def plot(
     if not plot_axes:
         ax.tick_params(bottom=False, labelbottom=False, left=False, labelleft=False)
 
-    if not plot_boundary:
-        ax.spines['top'  ].set_visible(False)
-        #ax.spines['bottom'].set_visible(False) this one is visible
-        ax.spines['left'  ].set_visible(False)
-        ax.spines['right' ].set_visible(False)
-    ax.set_aspect((x_max-x_min)/(y_max-y_min), adjustable='box')
+    for pos in invisible_spines:
+        ax.spines[pos].set_visible(False)
+
+
+    ax.set_aspect(1, adjustable='box')
 
     from mpl_toolkits.axes_grid1.anchored_artists import AnchoredSizeBar
 
@@ -285,8 +301,8 @@ def plot(
         size_vertical=1)
 
     ax.add_artist(scalebar)
-    for k, spine in ax.spines.items():  #ax.spines is a dictionary
-        rprint(f'{label} {title}\'s {k} zorder : {spine.get_zorder()}')
+    # for k, spine in ax.spines.items():  #ax.spines is a dictionary
+    #     rprint(f'{label} {title}\'s {k} zorder : {spine.get_zorder()}')
 
 
     return x_min, x_max, y_min, y_max
@@ -326,6 +342,7 @@ def main(input_data, output, plot_options):
             "min_samples": 5
         }
     )
+    layout             = plot_options.get('layout', 'side by side')
     cluster_titles     = plot_options.get('cluster_titles', {})
     plot_particle_ids  = plot_options.get('plot_particle_ids', {})
     plot_primaries     = plot_options.get('plot_primaries', {})
@@ -337,7 +354,8 @@ def main(input_data, output, plot_options):
     time_axis_cut      = plot_options.get("time_axis_cut", [])
     scalebar_positions = plot_options.get("scalebar_positions", {})
     rectangle_label_positions = plot_options.get("rectangle_label_positions", {})
-
+    clusters_data = plot_options.get("clusters_data", {})
+    invisible_spines = plot_options.get("invisible_spines", {})
 
     hit_data   = uproot.open(input_data)['op_hits'] .arrays(library="pd")
     truth_data = uproot.open(input_data)['mc_truth'].arrays(library="pd")
@@ -360,11 +378,6 @@ def main(input_data, output, plot_options):
     indices_to_drop = rng.choice(hit_data.index, n_hits_to_drop, replace=False)
     hit_data.drop(indices_to_drop, inplace=True)
 
-    rprint('hit_data')
-    rprint(hit_data)
-    rprint('truth_data')
-    rprint(truth_data)
-
     hit_x_key = "h_pos_z"
     hit_y_key = "h_pos_x" if view == 'xz' else 'h_pos_y'
 
@@ -374,11 +387,6 @@ def main(input_data, output, plot_options):
     hit_x = np.array(hit_data[hit_x_key])
     hit_y = np.array(hit_data[hit_y_key])
     hit_t = np.array(hit_data['h_time'])
-
-    rprint(f'''{hit_x.shape=}
-{hit_y.shape=}
-{hit_t.shape=}
-''')
 
     alphabet = 'abcdefghijklmnopqrstuvwxyz'
     time_binning = np.arange(0.,np.max(hit_data['h_time']), hit_lifetime_ns)
@@ -480,22 +488,43 @@ def main(input_data, output, plot_options):
 
         n_decay_clusters = len(clusters) - 1
         rprint(f'after merging clustering: {n_decay_clusters=}')
+        for cluster in clusters.values():
+            rprint(cluster)
 
     else:
+
         from time_cluster_maker import Cluster
-        clusters = {
-            "a": Cluster.get_from_data(-5000, 5000, -5000, 5000, 0, 1000, hit_x, hit_y, hit_t),
-        }
+        if clusters_data == {}:
+            clusters = {
+                "a": Cluster.get_from_data(-5000, 5000, -5000, 5000, 0, 1000, hit_x, hit_y, hit_t),
+            }
+        else:
+            clusters = {
+                label: Cluster.get_from_data(
+                    value['x_min'], value['x_max'],
+                    value['y_min'], value['y_max'],
+                    value['t_min'], value['t_max'],
+                    hit_x, hit_y, hit_t
+                ) for label, value in clusters_data.items()
+            }
 
 
     fig = plt.figure(figsize=(10,8))
     n_decay_clusters = len(clusters) - 1
 
-    nrows = 3
-    ncols_clusters = int(np.ceil(n_decay_clusters/(nrows-1)))
-    ncols = 3+ncols_clusters
-    empty_rows = n_decay_clusters%(nrows-1)
-    rprint(f'{nrows=} {ncols=} {empty_rows=}')
+    if layout == 'side by side':
+        nrows = 3
+        ncols_clusters = int(np.ceil(n_decay_clusters/(nrows-1)))
+        ncols = 3+ncols_clusters
+        empty_rows = n_decay_clusters%(nrows-1)
+        rprint(f'{nrows=} {ncols=} {empty_rows=}')
+    elif layout == 'vertical':
+        nrows = 4
+        ncols_clusters = n_decay_clusters
+        ncols = ncols_clusters
+        if ncols%2 == 1:
+            ncols+=1
+        rprint(f'{nrows=} {ncols=}')
 
     for cluster in clusters.values():
         rprint(cluster)
@@ -514,18 +543,26 @@ def main(input_data, output, plot_options):
             fig.add_subplot(gs[nrows-1, int(ncols/2):])
         ]
 
-    axfull = fig.add_subplot(gs[:nrows-1, :3])
+    if layout == 'side by side':
+        axfull = fig.add_subplot(gs[:nrows-1, :3])
+    elif layout == 'vertical':
+        axfull = fig.add_subplot(gs[:2, :])
+
     axclus = []
 
 
     for i_cluster in range(n_decay_clusters):
-        the_col = 3+i_cluster%(ncols_clusters)
-        the_row = int(np.floor(i_cluster/(ncols_clusters)))
 
-        ax = fig.add_subplot(gs[the_row, the_col])
-        axclus += [ax]
+        if layout == 'side by side':
+            the_col = 3+i_cluster%(ncols_clusters)
+            the_row = int(np.floor(i_cluster/(ncols_clusters)))
 
+            ax = fig.add_subplot(gs[the_row, the_col])
+            axclus += [ax]
 
+        elif layout == 'vertical':
+            ax = fig.add_subplot(gs[2, i_cluster])
+            axclus += [ax]
 
 
     from rich.table import Table
@@ -615,12 +652,12 @@ def main(input_data, output, plot_options):
             with_underlay = count_total>0,
             aspect_ratio = 1,
             plot_axes = plot_axes,
-            plot_boundary = count_total>0,
             plot_primaries = plot_prim,
             plot_particle_ids = plot_particle_ids.get(label, []),
             #plot_list = plot_list.get(label, None),
             legend_label = f"({label})" if count_total>0 else None,
             scalebar_position = scalebar_positions.get(label, 'lower right'),
+            invisible_spines = invisible_spines.get(label, []),
         )
 
 
@@ -640,26 +677,27 @@ def main(input_data, output, plot_options):
             rect.get_x(),
             rect.get_x()+rect.get_width(),
             rect.get_x()+rect.get_width(),
-#            rect.get_x()
+            rect.get_x()
         ]
         ys = [
             rect.get_y(),
             rect.get_y()+rect.get_height(),
             rect.get_y()+rect.get_height(),
             rect.get_y(),
- #           rect.get_y(),
+            rect.get_y(),
         ]
 
-        axfull.plot(xs, ys, color='red', zorder=8, linewidth=1.5, linestyle='-')
+        # axfull.plot(xs, ys, color='red', zorder=8, linewidth=1.5, linestyle='-')
+        axfull.plot(xs, ys, color='red', linewidth=1.5, linestyle='-')
         # axfull.add_patch(rect)
         # rect.set(facecolor='none', edgecolor='red', zorder=8, linewidth=1.5)
         # rect.set_linestyle('-')
         #rect.
         position_annotations = [rect.get_x()+100, rect.get_y()+rect.get_height()-150]
-        rlp = rectangle_label_positions.get(label)
+        rlp = rectangle_label_positions.get(label, '')
         if 'right' in rlp:
             position_annotations[0] = rect.get_x()+rect.get_width()-150
-        if 'bottom' in rlp:
+        if 'lower' in rlp:
             position_annotations[1] = rect.get_y()+100
 
 
@@ -756,11 +794,12 @@ def main(input_data, output, plot_options):
         handles_insert, labels_insert = ax.get_legend_handles_labels()
         handles += handles_insert
         labels += labels_insert
-    axfull.legend(handles, labels,ncol=legend_n_columns, loc=legend_position).set_zorder(20)
+    axfull.legend(handles, labels,ncol=legend_n_columns, loc=legend_position)#.set_zorder(20)
 
 
 
-    if len(axtime)==0:
+    if len(axtime)==1:
+        pass
         axtime[0].hist(
             [clusters[label].hit_t for label in hit_sorted_labels],
             time_binning,
@@ -786,10 +825,10 @@ def main(input_data, output, plot_options):
         sorted_handles = [h for _, h in sorted(zip(labels, handles))]
         axtime[0].legend(sorted_handles, sorted_labels)
 
-        axtime[0].spines['left'] = 100
-        axtime[0].spines['right'] = 100
-        axtime[0].spines['bottom'] = 100
-        axtime[0].spines['top'] = 100
+        # axtime[0].spines['left'] = 100
+        # axtime[0].spines['right'] = 100
+        # axtime[0].spines['bottom'] = 100
+        # axtime[0].spines['top'] = 100
 
 
     else:
@@ -801,8 +840,8 @@ def main(input_data, output, plot_options):
             stacked=True,
             rasterized=True,
             label=[f'{label}: {cluster_titles.get(label, "")}' for label in hit_sorted_labels],
-
         )
+
         n, b, p = axtime[1].hist(
             [clusters[label].hit_t for label in hit_sorted_labels],
             time_binning,
@@ -812,6 +851,7 @@ def main(input_data, output, plot_options):
             rasterized=True,
             label=[f'{label}: {cluster_titles.get(label, "")}' for label in hit_sorted_labels],
         )
+
         time_counts = np.zeros(len(time_binning)-1)
         for cluster in clusters.values():
             counts, _ = np.histogram(cluster.hit_t, bins=time_binning)
@@ -847,7 +887,6 @@ def main(input_data, output, plot_options):
         axtime[1].yaxis.set_tick_params(which='both',left=False)
         # axtime[1].tick_params('y', which='both',  )
         axtime[1].yaxis.set_ticks([])
-        #axtime[1].yaxis.minorticks_off()
 
         d = .015  # how big to make the diagonal lines in axes coordinates
         # arguments to pass plot, just so we don't keep repeating them
@@ -864,17 +903,6 @@ def main(input_data, output, plot_options):
         sorted_labels = sorted(labels)
         sorted_handles = [h for _, h in sorted(zip(labels, handles))]
         axtime[1].legend(sorted_handles, sorted_labels)
-
-        axtime[0].spines['left'  ].set_zorder(100)
-        axtime[0].spines['right' ].set_zorder(100)
-        axtime[0].spines['bottom'].set_zorder(100)
-        axtime[0].spines['top'   ].set_zorder(100)
-
-        axtime[1].spines['left'  ].set_zorder(100)
-        axtime[1].spines['right' ].set_zorder(100)
-        axtime[1].spines['bottom'].set_zorder(100)
-        axtime[1].spines['top'   ].set_zorder(100)
-
 
 
 

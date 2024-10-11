@@ -31,7 +31,7 @@ def dump_truth_info(input_data, energy_cut, ignore_pdgs=[]):
             'y_start', 'y_end',
             'z_start', 'z_end',
             'primary', 'parent', 'interaction',
-            'length',
+            'length', 'n_steps'
         ]
     )
 
@@ -89,6 +89,7 @@ def dump_truth_info(input_data, energy_cut, ignore_pdgs=[]):
                     particle_df.loc[index, 'z_start'],
                     particle_df.loc[index, 'z_end']
                 )
+            particle_df.loc[index, 'n_steps'] += 1
         else:
             nodes[id] = Node(id)
             particle_df.loc[row_id] = [
@@ -114,7 +115,9 @@ def dump_truth_info(input_data, energy_cut, ignore_pdgs=[]):
                 particle_parents[ip],
                 particle_interactions[ip],
 
-                0.
+                0.,
+                1,
+
             ]
             row_id += 1
 
@@ -139,8 +142,8 @@ def dump_truth_info(input_data, energy_cut, ignore_pdgs=[]):
         # if row['pdg'] == 22 and row['energy'] < 4:
         #     return False
 
-        if row['length'] < 1 and row['pdg'] > 3000:
-            return False
+        # if row['length'] < 1 and row['pdg'] > 3000:
+        #     return False
 
         return True
 
@@ -159,7 +162,7 @@ def dump_truth_info(input_data, energy_cut, ignore_pdgs=[]):
 
         t.add_row(
             pre + str(row['id']), str(row['pdg']),
-            str(row['name']), f"{row['energy']:.1f}",
+            str(row['name']), f"{row['energy']:.3f}",
             f"{row['first_time']:.2f}", f"{row['last_time']:0.2f}",
 
             f"{row['x_start']:.2f}", f"{row['x_end']:0.2f}",
@@ -168,7 +171,7 @@ def dump_truth_info(input_data, energy_cut, ignore_pdgs=[]):
 
             str(row['primary']), str(row['parent']), str(row['interaction']),
 
-            f"{row['length']:.2f}",
+            f"{row['length']:.2f}", str(row['n_steps']),
 
             style='red' if row['primary'] else None,
 
